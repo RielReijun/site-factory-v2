@@ -167,6 +167,18 @@ def create_cf_pages_project(token: str, account_id: str, project_name: str,
     return r.json().get("result", {})
 
 
+def trigger_cf_deployment(token: str, account_id: str, project_name: str) -> None:
+    """Triggert een nieuwe deployment voor een bestaand Cloudflare Pages project."""
+    r = requests.post(
+        f"{CF_API}/accounts/{account_id}/pages/projects/{project_name}/deployments",
+        headers={"Authorization": f"Bearer {token}"}, timeout=30,
+    )
+    if r.ok:
+        print(f"[OK]  Cloudflare deployment getriggerd")
+    else:
+        print(f"[WARN] Deployment trigger mislukt: {r.status_code} {r.text[:200]}")
+
+
 def setup_cloudflare(token: str, account_id: str, project_name: str,
                      github_username: str, repo_name: str) -> str:
     """Maakt Cloudflare Pages project aan als het nog niet bestaat. Geeft live URL terug."""
@@ -182,6 +194,11 @@ def setup_cloudflare(token: str, account_id: str, project_name: str,
     subdomain = result.get("subdomain", "")
     url = f"https://{subdomain}.pages.dev" if subdomain else ""
     print(f"[OK]  Cloudflare project aangemaakt: {url or project_name}")
+
+    # Eerste deployment triggeren (anders staat het project leeg)
+    print(f"[INFO] Eerste Cloudflare deployment triggeren...")
+    trigger_cf_deployment(token, account_id, project_name)
+
     return url
 
 
