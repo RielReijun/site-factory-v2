@@ -184,7 +184,7 @@ def setup_cloudflare(token: str, account_id: str, project_name: str,
     """Maakt Cloudflare Pages project aan als het nog niet bestaat. Geeft live URL terug."""
     existing = cf_project_exists(token, account_id, project_name)
     if existing:
-        subdomain = existing.get("subdomain", "")
+        subdomain = existing.get("subdomain", "").removesuffix(".pages.dev")
         url = f"https://{subdomain}.pages.dev" if subdomain else ""
         print(f"[INFO] Cloudflare project bestaat al: {url or project_name}")
         return url

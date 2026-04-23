@@ -19,6 +19,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import requests as _requests
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context
 
 
@@ -30,6 +31,11 @@ LOG_FILE       = Path("/workspace/data/pipeline.log")
 STATUS_FILE    = Path("/workspace/data/pipeline_status.json")
 TRASH_DIR      = Path("/workspace/data/trash")
 TRASH_DAYS     = 14
+
+ANTHROPIC_ADMIN_KEY  = os.environ.get("ANTHROPIC_ADMIN_KEY", "")
+ADMIN_API_BASE       = "https://api.anthropic.com/v1"
+_usage_cache: dict   = {}          # {"ts": float, "data": dict}
+USAGE_CACHE_TTL      = 60          # seconden
 
 # Prijzen in USD per 1 miljoen tokens
 PRICING = {
@@ -138,6 +144,11 @@ def enrich_prospect(p: dict) -> dict:
         "validate": p.get("site_status") == "done",
     }
 
+    # Kosten samenvatten voor kaartweergave
+    costs      = get_prospect_costs(p)
+    total_cost = sum(c["cost"] for c in costs)
+    page_count = len(list(site_dir.glob("*.html"))) if site_dir.is_dir() else 0
+
     return {
         **p,
         "slug":           slug,
@@ -148,7 +159,73 @@ def enrich_prospect(p: dict) -> dict:
         "deploy_status":  p.get("deploy_status", ""),
         "github_url":     p.get("github_url", ""),
         "cloudflare_url": p.get("cloudflare_url", ""),
+        "total_cost":     round(total_cost, 4),
+        "page_count":     page_count,
     }
+
+
+# ── Anthropic Admin API ───────────────────────────────────────────────────────
+
+def _fetch_usage_from_api() -> dict:
+    """Haal kosten op via Anthropic Admin API. Geeft lege dict terug bij fout."""
+    if not ANTHROPIC_ADMIN_KEY:
+        return {"error": "ANTHROPIC_ADMIN_KEY niet geconfigureerd"}
+
+    now         = datetime.now(timezone.utc)
+    today       = now.date().isoformat()                            # max ending_at
+    yesterday   = (now.date() - timedelta(days=1)).isoformat()     # recentste complete dag
+    month_start = now.date().replace(day=1).isoformat()
+
+    headers = {
+        "x-api-key":         ANTHROPIC_ADMIN_KEY,
+        "anthropic-version": "2023-06-01",
+    }
+
+    def _get_cost(start: str, end: str) -> float:
+        """Haal gecombineerde kosten op voor een datumbereik (inclusief paginering)."""
+        total  = 0.0
+        params: dict = {"starting_at": start, "ending_at": end}
+        while True:
+            r = _requests.get(
+                f"{ADMIN_API_BASE}/organizations/cost_report",
+                headers=headers,
+                params=params,
+                timeout=10,
+            )
+            r.raise_for_status()
+            data = r.json()
+            for bucket in data.get("data", []):
+                for result in bucket.get("results", []):
+                    total += float(result.get("amount", 0) or 0)
+            if not data.get("has_more"):
+                break
+            params = {"starting_at": start, "ending_at": end, "page": data["next_page"]}
+        return total / 100.0     # API geeft USD-centen terug
+
+    try:
+        yesterday_cost = _get_cost(yesterday, today)
+        month_cost     = _get_cost(month_start, today)
+        return {
+            "today":       yesterday_cost,   # recentste complete dag
+            "today_label": yesterday,
+            "month":       month_cost,
+            "month_label": f"{month_start} t/m {yesterday}",
+            "as_of":       now.strftime("%H:%M"),
+            "error":       None,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_usage(force: bool = False) -> dict:
+    """Geeft gecachte usage terug (max USAGE_CACHE_TTL seconden oud)."""
+    now = time.time()
+    if not force and _usage_cache.get("ts") and now - _usage_cache["ts"] < USAGE_CACHE_TTL:
+        return _usage_cache["data"]
+    data = _fetch_usage_from_api()
+    _usage_cache["ts"]   = now
+    _usage_cache["data"] = data
+    return data
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -868,6 +945,115 @@ def api_deploy_status(slug):
                 "cloudflare_url": p.get("cloudflare_url", ""),
             })
     abort(404)
+
+
+@app.post("/api/verify-deploys")
+def api_verify_deploys():
+    """Ping GitHub + Cloudflare Pages voor elke prospect met site_status=done.
+    Fixt ook dubbele .pages.dev in cloudflare_url."""
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    github_user  = os.environ.get("GITHUB_USERNAME", "")
+    gh_headers   = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github.v3+json",
+    } if github_token else {}
+
+    ps = load_prospects()
+    fixed = []
+
+    for i, p in enumerate(ps):
+        if p.get("site_status") != "done":
+            continue
+
+        changed = False
+        slug = slugify(p.get("name", ""))
+
+        # Fix dubbele .pages.dev in cloudflare_url
+        cf = p.get("cloudflare_url", "") or ""
+        if ".pages.dev.pages.dev" in cf:
+            cf = cf.replace(".pages.dev.pages.dev", ".pages.dev")
+            ps[i]["cloudflare_url"] = cf
+            changed = True
+
+        # Ping GitHub repo
+        if p.get("deploy_status") != "done" and github_token and github_user:
+            repo_name = f"site-{slug}"
+            try:
+                r = _requests.get(
+                    f"https://api.github.com/repos/{github_user}/{repo_name}",
+                    headers=gh_headers, timeout=8,
+                )
+                if r.status_code == 200:
+                    ps[i]["deploy_status"] = "done"
+                    if not ps[i].get("github_url"):
+                        ps[i]["github_url"] = r.json().get("html_url", "")
+                    changed = True
+            except Exception:
+                pass
+
+        # Ping Cloudflare Pages URL (afleiden uit slug als niet opgeslagen)
+        cf_url = ps[i].get("cloudflare_url", "") or ""
+        if not cf_url:
+            cf_url = f"https://site-{slug}.pages.dev"
+        try:
+            r = _requests.head(cf_url, timeout=8, allow_redirects=True)
+            if r.status_code < 400:
+                if ps[i].get("cloudflare_url") != cf_url:
+                    ps[i]["cloudflare_url"] = cf_url
+                    changed = True
+        except Exception:
+            pass
+
+        if changed:
+            fixed.append(p.get("name"))
+
+    if fixed:
+        save_prospects(ps)
+
+    return jsonify({"ok": True, "fixed": fixed})
+
+
+@app.get("/api/prospects/<slug>/mail")
+def api_get_mail(slug):
+    for p in load_prospects():
+        if slugify(p.get("name", "")) == slug:
+            mail_path = p.get("mail_path", "")
+            if mail_path and Path(mail_path).exists():
+                return jsonify({"ok": True, "mail": Path(mail_path).read_text(encoding="utf-8")})
+            return jsonify({"ok": False, "error": "Mail nog niet gegenereerd"})
+    abort(404)
+
+
+@app.get("/api/usage")
+def api_usage():
+    force = request.args.get("force") == "1"
+    return jsonify(get_usage(force=force))
+
+
+@app.post("/api/usage/snapshot")
+def api_usage_snapshot():
+    """Sla huidige usage op als snapshot (voor before/after vergelijking)."""
+    data  = get_usage(force=True)
+    label = request.get_json(silent=True, force=True) or {}
+    snap  = {
+        **data,
+        "label":      label.get("label", "Snapshot"),
+        "snapshot_at": datetime.now(timezone.utc).isoformat(),
+    }
+    snap_file = Path("/workspace/data/usage_snapshot.json")
+    snap_file.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
+    return jsonify({"ok": True, "snapshot": snap})
+
+
+@app.get("/api/usage/snapshot")
+def api_usage_snapshot_get():
+    snap_file = Path("/workspace/data/usage_snapshot.json")
+    if not snap_file.exists():
+        return jsonify(None)
+    try:
+        return jsonify(json.loads(snap_file.read_text(encoding="utf-8")))
+    except Exception:
+        return jsonify(None)
 
 
 @app.get("/sites/<slug>/")

@@ -59,11 +59,32 @@ Gebruik onderstaande briefing om statische websitebestanden te genereren voor {c
 - Responsive en modern
 - Geen lorem ipsum
 - Geen verzonnen feiten buiten de briefing
-- Gebruik placeholders waar informatie ontbreekt
 - Schrijf teksten in het Nederlands
 - Gebruik relatieve links
 - Gebruik nette, production-minded code
 - Gebruik dezelfde visuele richting op alle pagina's
+- Gebruik GEEN em-dashes (—) in lopende tekst, gebruik een komma, punt of nieuwe zin als dat natuurlijker klinkt
+
+## Formulieren
+- Gebruik voor alle contactformulieren: `<form action="https://formspree.io/f/FORMSPREE_ID" method="POST">`
+- Voeg een hidden `<input type="hidden" name="_subject" value="Nieuw bericht via website">` toe
+- Voeg `<input type="text" name="_gotcha" style="display:none">` toe als spam-bescherming
+- Voeg na het formulier een klein commentaar toe: `<!-- Vervang FORMSPREE_ID door uw eigen Formspree endpoint -->`
+
+## Google Maps
+- Als er een adres in de briefing staat: voeg op de contactpagina een Google Maps embed in
+- Gebruik: `<iframe src="https://maps.google.com/maps?q=ADRES&output=embed" width="100%" height="300" style="border:0;border-radius:8px" allowfullscreen loading="lazy"></iframe>`
+- Vervang ADRES door het URL-encoded adres uit de briefing
+
+## Wat NOOIT mag worden verzonnen
+Dit zijn secties die je WEGLAAT als de briefing er geen concrete data voor bevat:
+- Klantreviews of testimonials: alleen opnemen als er letterlijke citaten of klantnamen in de briefing staan
+- Statistieken en cijfers: "500+ klanten", "10 jaar ervaring", "98% tevreden" alleen als dit expliciet in de briefing staat
+- Teamnamen, functies of persoonlijke verhalen van medewerkers: alleen als de briefing dit noemt
+- Prijzen en tarieven: alleen concrete bedragen uit de briefing, geen verzonnen prijsranges
+- Certificaten, diploma's of keurmerken: alleen als de briefing ze noemt
+
+Als zo'n sectie ontbreekt in de briefing: laat de sectie volledig weg. Voeg geen placeholder-tekst toe zoals "Voeg hier uw reviews toe" — laat het gewoon achterwege. Een compacte site zonder die secties is beter dan een site met verzonnen inhoud.
 
 ## Briefing
 {briefing}
@@ -154,6 +175,13 @@ Genereer ALLEEN dit bestand:
 - Gebruik CSS variables in :root voor kleuren, spacing en fonts
 - Mobile first, geen comments
 - Dek af: header, mobile nav, hero, cards, grids, buttons, forms, footer, page hero
+
+## Vaste afspraken voor open/active states — GEBRUIK ALTIJD EXACT DEZE KLASSEN
+- Mobiel nav open: `nav.is-open` (of het exacte nav-element met `.is-open`)
+- Dropdown open: `.nav-dropdown.is-open` of `.site-nav__dropdown.is-open`
+- Sticky header: `header.is-scrolled`
+- FAQ item open: `.faq__item.is-open` of `.faq-item.is-open`
+Gebruik NOOIT `--open`, `--active`, `show` of andere varianten voor deze states.
 """
 
     if unit == "scripts":
@@ -180,6 +208,14 @@ Genereer ALLEEN dit bestand:
 - Gebruik alleen class names en IDs die voorkomen in de HTML referentie hierboven
 - Ondersteun: mobiele navigatie toggle, sticky header, FAQ accordion, smooth scroll
 - Geen libraries, defensive code
+- Dropdown hover op desktop: gebruik altijd een sluitvertraging van 200ms via setTimeout zodat de gebruiker de muis naar het submenu kan bewegen zonder dat het wegklapt. Annuleer de timer bij mouseenter met clearTimeout.
+
+## Vaste afspraken voor open/active states — GEBRUIK ALTIJD EXACT DEZE KLASSEN
+- Mobiel nav open: voeg `is-open` toe aan het `<nav>` element (niet aan een wrapper)
+- Dropdown open: voeg `is-open` toe aan het `<ul>` dropdown-element direct (niet aan de parent `<li>`)
+- Sticky header: voeg `is-scrolled` toe aan het `<header>` element
+- FAQ item open: voeg `is-open` toe aan het `.faq__item` of `.faq-item` element
+Deze klassen zijn ook zo gedefineerd in de bijbehorende CSS — gebruik NIETS anders (geen `--open`, geen `--active`, geen `show`).
 """
 
     if unit == "over_ons":

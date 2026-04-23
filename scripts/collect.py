@@ -1,5 +1,6 @@
 import json
 import re
+import sys
 import time
 from collections import deque
 from pathlib import Path
@@ -29,7 +30,9 @@ ASSET_EXTENSIONS = {
     ".mp4", ".webm", ".mp3",
 }
 
-# Extensies die we als asset behandelen (niet als HTML-pagina)
+# Afbeeldingsextensies die ook van externe CDNs gedownload mogen worden
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
 # ── URL-hulpfuncties ──────────────────────────────────────────────────────────
 
 def normalize_url(url: str) -> str:
@@ -141,6 +144,7 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
 
     visited_pages:  set[str] = set()
     visited_assets: set[str] = set()
+    external_image_queue: deque[str] = deque()
 
     pages_saved:  list[str] = []
     assets_saved: list[str] = []
@@ -210,9 +214,20 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
         # Vind assets op deze pagina — alleen expliciete asset-typen, geen generieke <link>
         raw_asset_urls = []
 
-        # Afbeeldingen
-        for tag in soup.find_all("img", src=True):
-            raw_asset_urls.append(urljoin(url, tag["src"]))
+        # Afbeeldingen — ook data-src (lazy loading) en eerste srcset-URL
+        for tag in soup.find_all("img"):
+            for attr in ("src", "data-src"):
+                val = tag.get(attr)
+                if val:
+                    img_url = normalize_url(urljoin(url, val.split("?")[0]))
+                    ext = Path(urlparse(img_url).path).suffix.lower()
+                    if ext in IMAGE_EXTENSIONS:
+                        if is_same_domain(img_url, base_domain):
+                            if img_url not in visited_assets:
+                                asset_queue.append(img_url)
+                        else:
+                            if img_url not in visited_assets:
+                                external_image_queue.append(img_url)
 
         # Stylesheets (alleen <link rel="stylesheet">)
         for tag in soup.find_all("link", rel=True, href=True):
@@ -241,30 +256,33 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
         time.sleep(CRAWL_DELAY)
 
     # ── Fase 2: assets downloaden ─────────────────────────────────────────────
-    print(f"[INFO] {len(asset_queue)} assets gevonden, downloaden (max {MAX_ASSETS})...")
+    total_queued = len(asset_queue) + len(external_image_queue)
+    print(f"[INFO] {total_queued} assets gevonden ({len(external_image_queue)} externe afbeeldingen), downloaden (max {MAX_ASSETS})...")
+
+    def _download_asset(asset_url: str) -> bool:
+        nonlocal assets_saved
+        if asset_url in visited_assets:
+            return False
+        visited_assets.add(asset_url)
+        rel_path = url_to_asset_path(asset_url)
+        if rel_path is None:
+            print(f"[WARN] Asset-pad niet bruikbaar, overgeslagen: {asset_url}")
+            return False
+        response = fetch(asset_url, session)
+        if response is None:
+            failed_urls.append(asset_url)
+            return False
+        save_file(target_dir / rel_path, response.content)
+        assets_saved.append(asset_url)
+        print(f"[OK] Asset: {rel_path}")
+        time.sleep(CRAWL_DELAY * 0.5)
+        return True
 
     while asset_queue and len(assets_saved) < MAX_ASSETS:
-        url = normalize_url(asset_queue.popleft())
+        _download_asset(normalize_url(asset_queue.popleft()))
 
-        if url in visited_assets:
-            continue
-        visited_assets.add(url)
-
-        rel_path = url_to_asset_path(url)
-        if rel_path is None:
-            print(f"[WARN] Asset-pad niet bruikbaar, overgeslagen: {url}")
-            continue
-
-        response = fetch(url, session)
-        if response is None:
-            failed_urls.append(url)
-            continue
-
-        save_file(target_dir / rel_path, response.content)
-        assets_saved.append(url)
-        print(f"[OK] Asset: {rel_path}")
-
-        time.sleep(CRAWL_DELAY * 0.5)
+    while external_image_queue and len(assets_saved) < MAX_ASSETS:
+        _download_asset(normalize_url(external_image_queue.popleft()))
 
     # ── Tekst en meta opslaan ─────────────────────────────────────────────────
     combined_text = "\n\n".join(all_texts)
@@ -367,6 +385,9 @@ def main():
     target_dir = DATA_DIR / slug
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    MINIMUM_PAGES      = 1
+    MINIMUM_TEXT_CHARS = 500
+
     try:
         meta = crawl_site(url, target_dir)
         meta["company_name"] = name
@@ -377,11 +398,30 @@ def main():
             encoding="utf-8"
         )
 
+        # ── Kwaliteitscheck: genoeg data om verder te gaan? ──────────────────
+        pages_crawled = meta.get("pages_crawled", 0)
+        text_file     = target_dir / "text.txt"
+        text_chars    = len(text_file.read_text(encoding="utf-8", errors="ignore")) if text_file.exists() else 0
+
+        if pages_crawled < MINIMUM_PAGES or text_chars < MINIMUM_TEXT_CHARS:
+            reason = (
+                f"Te weinig data: {pages_crawled} pagina('s) gecrawld, "
+                f"{text_chars} tekens tekst (minimum: {MINIMUM_PAGES} pagina, {MINIMUM_TEXT_CHARS} tekens). "
+                "Pipeline gestopt om verzonnen content te voorkomen."
+            )
+            print(f"[FAIL] {reason}")
+            prospects[index]["status"] = "insufficient"
+            prospects[index]["error"]  = reason
+            save_prospects(prospects)
+            sys.exit(1)
+
         prospects[index]["status"]         = "collected"
         prospects[index]["collected_path"] = str(target_dir)
         save_prospects(prospects)
         print("[OK] Prospect status bijgewerkt naar 'collected'")
 
+    except SystemExit:
+        raise
     except Exception as e:
         prospects[index]["status"] = "failed"
         prospects[index]["error"]  = str(e)

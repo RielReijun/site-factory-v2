@@ -359,6 +359,23 @@ def step_repair_site(site_dir: Path, json_out: Path, n: int, total: int, prospec
     return run_cmd(cmd, "repair_site", n, total, prospect)
 
 
+def step_polish_site(site_dir: Path, company_name: str, n: int, total: int, prospect: str) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "polish_site.py"),
+        "--site-dir", str(site_dir),
+        "--company",  company_name,
+    ]
+    return run_cmd(cmd, "polish_site", n, total, prospect)
+
+
+def step_generate_mail(name: str, n: int, total: int, prospect: str) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "generate_mail.py"),
+        "--name", name,
+    ]
+    return run_cmd(cmd, "generate_mail", n, total, prospect)
+
+
 # ── Hulpfunctie: bouw de volledige unit-lijst op ──────────────────────────────
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
@@ -769,6 +786,21 @@ def main():
             if not step_validate_site(site_dir, json_out, n, total, company_name):
                 log(f"[WARN] Site heeft nog steeds validatiefouten na reparatie. Rapport: {json_out}")
                 # Niet afbreken — warnings zijn acceptabel, de site is bruikbaar
+        else:
+            # Validatie geslaagd — toch reparatie uitvoeren voor site-brede fixes
+            # (hamburger, sr-only, footerYear, ref-files) die de validator niet dekt
+            n += 1
+            step_repair_site(site_dir, json_out, n, total, company_name)
+
+        # ── Polish: dedupliceer pagina's + herstel header-consistentie + demo-banner ──
+        n += 1
+        log("\n[INFO] Polish uitvoeren (deduplicatie + header-consistentie + demo-banner)...")
+        step_polish_site(site_dir, company_name, n, total, company_name)
+
+        # ── Outreach-mail genereren ───────────────────────────────────────────
+        n += 1
+        log("\n[INFO] Outreach-mail genereren...")
+        step_generate_mail(company_name, n, total, company_name)
 
     mark_site_done(company_name)
     save_timings(collected_path, company_name)
