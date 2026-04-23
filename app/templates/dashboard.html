@@ -1,0 +1,1576 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site Factory</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --text:     #e2e4ef;
+      --muted:    #6b7280;
+      --accent:   #6366f1;
+      --green:    #22c55e;
+      --yellow:   #eab308;
+      --red:      #ef4444;
+      --gray:     #374151;
+      --radius:   10px;
+      --font:     'Inter', system-ui, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    .refresh-info {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* ── Add form ─────────────────────────────────────── */
+
+    .add-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+
+    .add-card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .add-form {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 160px;
+    }
+
+    .field label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+    }
+
+    .field input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .field input:focus {
+      border-color: var(--accent);
+    }
+
+    .btn {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+
+    .add-feedback {
+      margin-top: 10px;
+      font-size: 12px;
+      min-height: 16px;
+    }
+
+    .add-feedback.ok  { color: var(--green); }
+    .add-feedback.err { color: var(--red); }
+
+    /* ── Prospects ────────────────────────────────────── */
+
+    .section-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .section-header h2 {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .count-badge {
+      background: var(--border);
+      color: var(--muted);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 64px 0;
+      color: var(--muted);
+    }
+
+    .prospects-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .prospect-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px 24px;
+      align-items: center;
+      transition: border-color 0.15s;
+    }
+
+    .prospect-card:hover { border-color: #3a3d4a; }
+    .prospect-card.done  { border-left: 3px solid var(--green); }
+    .prospect-card.failed { border-left: 3px solid var(--red); }
+
+    .prospect-meta { min-width: 0; }
+
+    .prospect-name {
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .prospect-url {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .prospect-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+    }
+
+    /* ── Pipeline stages ──────────────────────────────── */
+
+    .stages {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stage-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+
+    .stage-dot.done    { background: #14532d; color: var(--green); }
+    .stage-dot.pending { background: var(--gray); color: var(--muted); }
+    .stage-dot.failed  { background: #450a0a; color: var(--red); }
+
+    .stage-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .stage-connector {
+      width: 20px;
+      height: 1px;
+      background: var(--border);
+      margin-bottom: 16px;
+    }
+
+    /* ── Actions ──────────────────────────────────────── */
+
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-sm {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-sm:hover { background: var(--border); }
+    .btn-sm.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-sm.primary:hover { opacity: 0.85; background: var(--accent); }
+
+    /* ── Spinner ──────────────────────────────────────── */
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ── Per-card pipeline progress ──────────────────── */
+
+    .prospect-card.running {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent)33;
+    }
+
+    .card-pipeline {
+      grid-column: 1 / -1;
+      display: none;
+      padding: 10px 0 2px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+
+    .prospect-card.running .card-pipeline { display: block; }
+
+    .pipeline-inline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pipeline-step-info { flex: 1; }
+
+    .progress-track {
+      background: var(--border);
+      border-radius: 3px;
+      height: 4px;
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+
+    .progress-fill {
+      background: var(--accent);
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .pipeline-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+    }
+
+    .card-step-text  { color: var(--text); }
+    .card-step-label { color: var(--muted); }
+
+    /* ── Log panel ────────────────────────────────────── */
+
+    .log-section { margin-top: 32px; }
+
+    .log-panel {
+      background: #0a0c12;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      height: 340px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .log-line { display: block; white-space: pre-wrap; word-break: break-all; }
+    .log-line.ok    { color: #22c55e; }
+    .log-line.fail  { color: #ef4444; }
+    .log-line.warn  { color: #eab308; }
+    .log-line.stap  { color: #818cf8; font-weight: 600; }
+    .log-line.start { color: #38bdf8; font-weight: 600; }
+    .log-line.sep   { color: #374151; }
+    .log-line.info  { color: #9ca3af; }
+    .log-line.empty { color: transparent; user-select: none; }
+
+    /* ── Delete confirm strip ────────────────────────── */
+
+    .prospect-card .confirm-strip {
+      display: none;
+      grid-column: 1 / -1;
+      background: #1c0a0a;
+      border-top: 1px solid #450a0a;
+      margin: 8px -20px -18px;
+      padding: 10px 20px;
+      border-radius: 0 0 var(--radius) var(--radius);
+      display: none;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #fca5a5;
+    }
+
+    .prospect-card.confirming .confirm-strip { display: flex; }
+
+    .prospect-card.confirming { border-color: #450a0a; }
+
+    .btn-danger {
+      background: var(--red);
+      border: none;
+      color: #fff;
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .btn-danger:hover { opacity: 0.85; }
+
+    .btn-cancel {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .btn-cancel:hover { background: var(--border); color: var(--text); }
+
+    /* ── Trash section ────────────────────────────────── */
+
+    .trash-section { margin-top: 40px; }
+
+    .trash-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      opacity: 0.7;
+    }
+
+    .trash-card:hover { opacity: 1; }
+
+    .trash-meta { flex: 1; min-width: 0; }
+
+    .trash-name { font-size: 14px; font-weight: 600; color: var(--muted); }
+    .trash-url  { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .trash-expires {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .trash-expires.urgent { color: var(--red); }
+    .trash-expires.ok     { color: var(--muted); }
+
+    /* ── Modal ────────────────────────────────────────── */
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      backdrop-filter: blur(3px);
+    }
+
+    .modal-overlay.open { display: flex; align-items: flex-start; justify-content: center; padding: 40px 20px; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 820px;
+      max-height: calc(100vh - 80px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 20px 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .modal-title { font-size: 16px; font-weight: 700; }
+    .modal-url   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 22px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px;
+    }
+    .modal-close:hover { color: var(--text); }
+
+    .modal-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 16px 24px 0;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      padding: 8px 14px;
+      cursor: pointer;
+      margin-bottom: -1px;
+      transition: color 0.15s;
+    }
+
+    .tab-btn:hover   { color: var(--text); }
+    .tab-btn.active  { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .modal-body {
+      overflow-y: auto;
+      padding: 28px 32px;
+      flex: 1;
+    }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .modal-empty {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 24px 0;
+    }
+
+    /* Markdown styling in modal */
+    .md h1 { font-size: 20px; font-weight: 700; margin: 0 0 16px; color: var(--text); }
+    .md h2 { font-size: 15px; font-weight: 700; margin: 28px 0 10px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    .md h3 { font-size: 13px; font-weight: 700; margin: 20px 0 8px; color: var(--text); }
+    .md p  { margin: 0 0 12px; line-height: 1.7; color: #c4c8d8; }
+    .md ul, .md ol { margin: 0 0 12px 20px; color: #c4c8d8; line-height: 1.7; }
+    .md li { margin-bottom: 4px; }
+    .md strong { color: var(--text); font-weight: 600; }
+    .md em { color: #a5b4fc; }
+    .md code { background: #0a0c12; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: monospace; color: #a5f3fc; }
+    .md pre { background: #0a0c12; border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 0 0 16px; }
+    .md pre code { background: none; border: none; padding: 0; color: #e2e8f0; font-size: 12px; }
+    .md blockquote { border-left: 3px solid var(--accent); padding-left: 14px; margin: 0 0 12px; color: var(--muted); }
+    .md hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+    /* ── Pages table ─────────────────────────────────── */
+
+    .pages-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .pages-table th {
+      text-align: left;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pages-table td {
+      padding: 10px 12px 10px 0;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .pages-table tr:last-child td { border-bottom: none; }
+
+    .status-dot         { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+    .status-dot.exists  { color: var(--green); }
+    .status-dot.missing { color: var(--muted); }
+
+    .btn-generate          { background: var(--accent); border: none; color: #fff; border-radius: 6px; padding: 5px 14px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; }
+    .btn-generate:hover    { opacity: 0.85; }
+    .btn-generate:disabled { opacity: 0.4; cursor: default; }
+
+    .pages-summary { margin-bottom: 16px; font-size: 12px; color: var(--muted); }
+
+    /* ── Cost table ──────────────────────────────────── */
+
+    .cost-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .cost-table th {
+      text-align: left;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 12px 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .cost-table td {
+      padding: 10px 12px 10px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      vertical-align: top;
+    }
+
+    .cost-table tfoot td {
+      border-bottom: none;
+      border-top: 2px solid var(--border);
+      padding-top: 14px;
+      font-weight: 700;
+    }
+
+    .cost-total-box {
+      margin-top: 20px;
+      background: #0a1a0a;
+      border: 1px solid #14532d;
+      border-radius: 8px;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .cost-total-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .cost-total-value { font-size: 22px; font-weight: 700; color: var(--green); }
+
+    /* ── Timing bars ─────────────────────────────────── */
+
+    .timing-section { margin-top: 28px; }
+    .timing-section-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px;
+    }
+    .timing-row {
+      display: grid;
+      grid-template-columns: 160px 1fr 52px;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+    .timing-label { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timing-bar-track { background: var(--border); border-radius: 3px; height: 6px; }
+    .timing-bar-fill  { height: 6px; border-radius: 3px; background: var(--accent); transition: width 0.3s; }
+    .timing-bar-fill.failed { background: var(--red); }
+    .timing-value { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+    .timing-total-row {
+      margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .timing-total-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .timing-total-value { font-size: 14px; font-weight: 700; color: var(--text); }
+
+    /* ── Responsive ───────────────────────────────────── */
+
+    @media (max-width: 600px) {
+      .prospect-card { grid-template-columns: 1fr; }
+      .prospect-right { align-items: flex-start; }
+      .stages { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    Site Factory
+  </div>
+  <span class="refresh-info" id="refresh-info">laden...</span>
+</header>
+
+<main>
+
+  <!-- Add prospect -->
+  <div class="add-card">
+    <h2>Nieuwe prospect toevoegen</h2>
+    <div class="add-form">
+      <div class="field">
+        <label for="inp-name">Bedrijfsnaam</label>
+        <input id="inp-name" type="text" placeholder="Voorbeeld BV" autocomplete="off">
+      </div>
+      <div class="field" style="flex:2; min-width:220px;">
+        <label for="inp-url">Website URL</label>
+        <input id="inp-url" type="url" placeholder="https://voorbeeld.nl" autocomplete="off">
+      </div>
+      <button class="btn" id="btn-add" onclick="addProspect()">Toevoegen</button>
+    </div>
+    <div class="add-feedback" id="add-feedback"></div>
+  </div>
+
+  <!-- Prospects list -->
+  <div class="section-header">
+    <h2>Prospects</h2>
+    <span class="count-badge" id="count">–</span>
+  </div>
+
+  <div id="prospects-container">
+    <div class="empty-state"><div class="spinner"></div></div>
+  </div>
+
+  <!-- Prullenbak -->
+  <div class="trash-section" id="trash-section" style="display:none">
+    <div class="section-header" style="margin-bottom:16px">
+      <h2 style="color:var(--muted)">🗑 Prullenbak</h2>
+      <span class="count-badge" id="trash-count">–</span>
+    </div>
+    <div id="trash-container" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+
+  <!-- Live log -->
+  <div class="log-section">
+    <div class="section-header">
+      <h2>Live output</h2>
+      <button class="btn-sm" onclick="clearLog()" style="font-size:11px;">Wissen</button>
+    </div>
+    <div class="log-panel" id="log-panel"></div>
+  </div>
+
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="modal-title">–</div>
+        <div class="modal-url"   id="modal-url">–</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <a id="btn-download-report" href="#" target="_blank"
+           style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;color:var(--text);text-decoration:none;white-space:nowrap"
+           title="Download klantrapport (HTML, printbaar als PDF)">↓ Rapport</a>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+    </div>
+    <div class="modal-tabs">
+      <button class="tab-btn active" onclick="switchTab('brief')"    id="tab-brief">Brief</button>
+      <button class="tab-btn"        onclick="switchTab('research')" id="tab-research">Research</button>
+      <button class="tab-btn"        onclick="switchTab('pages')"    id="tab-pages">Pagina's</button>
+      <button class="tab-btn"        onclick="switchTab('costs')"    id="tab-costs">Kosten</button>
+      <button class="tab-btn"        onclick="switchTab('log')"      id="tab-log">Log</button>
+      <button class="tab-btn"        onclick="switchTab('deploy')"   id="tab-deploy">Deploy</button>
+    </div>
+    <div class="modal-body">
+      <div class="tab-pane active" id="pane-brief"><div class="modal-empty">Laden...</div></div>
+      <div class="tab-pane"        id="pane-research"><div class="modal-empty">Laden...</div></div>
+      <div class="tab-pane"        id="pane-pages"><div class="modal-empty">Laden...</div></div>
+      <div class="tab-pane"        id="pane-costs"><div class="modal-empty">Laden...</div></div>
+      <div class="tab-pane"        id="pane-log"><div class="modal-empty">Laden...</div></div>
+      <div class="tab-pane"        id="pane-deploy"><div class="modal-empty">Laden...</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+const STAGES = [
+  { key: 'collect',  label: 'Collect',  icon: '⬇' },
+  { key: 'research', label: 'Research', icon: '🔍' },
+  { key: 'brief',    label: 'Brief',    icon: '📋' },
+  { key: 'generate', label: 'Genereer', icon: '⚙' },
+  { key: 'validate', label: 'Valideer', icon: '✓' },
+];
+
+let lastUpdated  = null;
+let autoScroll   = true;
+let sseConnected = false;
+
+// ── Delete / Trash ─────────────────────────────────────────────────────────
+
+function startDelete(slug) {
+  const card = document.getElementById(`card-${slug}`);
+  if (card) card.classList.add('confirming');
+}
+
+function cancelDelete(slug) {
+  const card = document.getElementById(`card-${slug}`);
+  if (card) card.classList.remove('confirming');
+}
+
+async function confirmDelete(slug, name) {
+  const card = document.getElementById(`card-${slug}`);
+  if (card) card.style.opacity = '0.4';
+
+  try {
+    const res  = await fetch(`/api/prospects/${slug}/trash`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      loadProspects();
+      loadTrash();
+    } else {
+      alert(data.error ?? 'Verwijderen mislukt');
+      if (card) { card.style.opacity = ''; card.classList.remove('confirming'); }
+    }
+  } catch {
+    if (card) { card.style.opacity = ''; card.classList.remove('confirming'); }
+    alert('Verbindingsfout');
+  }
+}
+
+async function restoreProspect(slug) {
+  try {
+    const res  = await fetch(`/api/prospects/${slug}/restore`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      loadProspects();
+      loadTrash();
+    } else {
+      alert(data.error ?? 'Herstellen mislukt');
+    }
+  } catch {
+    alert('Verbindingsfout');
+  }
+}
+
+async function loadTrash() {
+  try {
+    const res   = await fetch('/api/trash');
+    const items = await res.json();
+
+    const section   = document.getElementById('trash-section');
+    const container = document.getElementById('trash-container');
+    const badge     = document.getElementById('trash-count');
+
+    if (!items.length) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    badge.textContent = items.length;
+
+    container.innerHTML = items.map(t => {
+      const urgent = t.days_left <= 3;
+      const expiry = t.days_left === 0
+        ? 'Wordt vandaag verwijderd'
+        : `Nog ${t.days_left} dag${t.days_left !== 1 ? 'en' : ''} herstelbaar`;
+
+      return `
+        <div class="trash-card">
+          <div class="trash-meta">
+            <div class="trash-name">${esc(t.name)}</div>
+            <div class="trash-url">${esc(t.url)}</div>
+          </div>
+          <div class="trash-expires ${urgent ? 'urgent' : 'ok'}">${expiry}</div>
+          <button class="btn-sm primary" onclick="restoreProspect('${t.slug}')">↩ Herstellen</button>
+          <button class="btn-sm" style="color:var(--red);border-color:#450a0a"
+              onclick="permanentDelete('${t.slug}','${esc(t.name)}')">× Definitief verwijderen</button>
+        </div>`;
+    }).join('');
+  } catch {}
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+
+let activeSlug = null;
+let activeTab  = 'brief';
+const cache    = {};   // slug → { brief, research }
+
+marked.setOptions({ breaks: true, gfm: true });
+
+async function openModal(e, slug, name, url) {
+  activeSlug = slug;
+  document.getElementById('modal-title').textContent = name;
+  document.getElementById('modal-url').textContent   = url;
+  document.getElementById('btn-download-report').href = `/api/prospects/${slug}/report`;
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  switchTab(activeTab);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function closeModalOnBg(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.getElementById(`pane-${tab}`).classList.add('active');
+  loadTabContent(tab);
+}
+
+async function loadTabContent(tab) {
+  if (!activeSlug) return;
+  const pane = document.getElementById(`pane-${tab}`);
+
+  if (cache[activeSlug]?.[tab] !== undefined) {
+    pane.innerHTML = cache[activeSlug][tab];
+    return;
+  }
+
+  pane.innerHTML = '<div class="modal-empty"><div class="spinner" style="width:20px;height:20px;border-width:3px"></div></div>';
+
+  if (tab === 'costs') {
+    await loadCosts(pane);
+    return;
+  }
+
+  if (tab === 'pages') {
+    await loadPages(pane);
+    return;
+  }
+
+  if (tab === 'log') {
+    await loadLog(pane);
+    return;
+  }
+
+  if (tab === 'deploy') {
+    await loadDeploy(pane);
+    return;
+  }
+
+  try {
+    const res  = await fetch(`/api/prospects/${activeSlug}/${tab}`);
+    const data = await res.json();
+
+    if (!data.content) {
+      const html = `<div class="modal-empty">${data.error ?? 'Niet beschikbaar'}</div>`;
+      cache[activeSlug] = cache[activeSlug] || {};
+      cache[activeSlug][tab] = html;
+      pane.innerHTML = html;
+      return;
+    }
+
+    const html = `<div class="md">${marked.parse(data.content)}</div>`;
+    cache[activeSlug] = cache[activeSlug] || {};
+    cache[activeSlug][tab] = html;
+    pane.innerHTML = html;
+  } catch (err) {
+    pane.innerHTML = `<div class="modal-empty">Fout bij laden: ${err.message}</div>`;
+  }
+}
+
+async function loadLog(pane) {
+  try {
+    const res  = await fetch(`/api/prospects/${activeSlug}/log`);
+    const text = await res.text();
+    if (!text.trim()) {
+      pane.innerHTML = '<div class="modal-empty">Nog geen log beschikbaar.</div>';
+      return;
+    }
+    const colored = text.split('\n').map(line => {
+      const esc = line.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (esc.includes('[FAIL]'))  return `<span style="color:#ef4444">${esc}</span>`;
+      if (esc.includes('[WARN]'))  return `<span style="color:#eab308">${esc}</span>`;
+      if (esc.includes('[OK]'))    return `<span style="color:#22c55e">${esc}</span>`;
+      if (esc.includes('[START]') || esc.includes('════')) return `<span style="color:#6366f1;font-weight:600">${esc}</span>`;
+      if (esc.includes('[STAP]') || esc.includes('────')) return `<span style="color:#818cf8">${esc}</span>`;
+      return `<span style="color:#94a3b8">${esc}</span>`;
+    }).join('\n');
+    pane.innerHTML = `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn-sm" onclick="if(cache['${activeSlug}']) delete cache['${activeSlug}']['log']; loadLog(document.getElementById('pane-log'))">↺ Vernieuwen</button>
+      </div>
+      <pre style="font-size:11px;line-height:1.6;background:#0a0c12;border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-all">${colored}</pre>`;
+  } catch (err) {
+    pane.innerHTML = `<div class="modal-empty">Fout bij laden: ${err.message}</div>`;
+  }
+}
+
+async function loadDeploy(pane) {
+  try {
+    const res  = await fetch(`/api/prospects/${activeSlug}/deploy-status`);
+    const data = await res.json();
+
+    const status       = data.deploy_status  || '';
+    const githubUrl    = data.github_url     || '';
+    const cloudflareUrl = data.cloudflare_url || '';
+
+    const linkHtml = (url, label) => url
+      ? `<a href="${url}" target="_blank" style="color:var(--accent);text-decoration:none">${label} ↗</a>`
+      : `<span style="color:var(--muted)">—</span>`;
+
+    const statusBadge = status === 'done'
+      ? `<span style="color:var(--green);font-weight:600">✓ Gedeployd</span>`
+      : status === 'running'
+        ? `<span style="color:var(--yellow)">⏳ Bezig...</span>`
+        : status === 'failed'
+          ? `<span style="color:var(--red)">✗ Mislukt</span>`
+          : `<span style="color:var(--muted)">Nog niet gedeployd</span>`;
+
+    const deployBtn = status === 'running'
+      ? `<button class="btn-sm" disabled style="opacity:.5">Deploy bezig...</button>`
+      : `<button class="btn-sm primary" onclick="triggerDeploy('${activeSlug}', this)">${status === 'done' ? '↺ Opnieuw deployen' : '▶ Deploy'}</button>`;
+
+    pane.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:20px;padding:4px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px">Status</div>
+            <div>${statusBadge}</div>
+          </div>
+          <div>${deployBtn}</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr>
+            <td style="padding:8px 0;border-bottom:1px solid var(--border);color:var(--muted);width:140px">GitHub</td>
+            <td style="padding:8px 0;border-bottom:1px solid var(--border)">${linkHtml(githubUrl, githubUrl || 'Nog niet')}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:var(--muted)">Cloudflare Pages</td>
+            <td style="padding:8px 0">${linkHtml(cloudflareUrl, cloudflareUrl || 'Nog niet / niet geconfigureerd')}</td>
+          </tr>
+        </table>
+        <div style="font-size:11px;color:var(--muted);line-height:1.6">
+          Eerste deploy maakt de GitHub-repo aan en koppelt Cloudflare Pages (eenmalig).<br>
+          Volgende deploys pushen alleen naar GitHub — Cloudflare deployt dan automatisch.
+        </div>
+      </div>`;
+
+    if (status === 'running') {
+      setTimeout(() => {
+        if (activeSlug && activeTab === 'deploy') {
+          const p = document.getElementById('pane-deploy');
+          if (p) loadDeploy(p);
+        }
+      }, 5000);
+    }
+  } catch (err) {
+    pane.innerHTML = `<div class="modal-empty">Fout bij laden: ${err.message}</div>`;
+  }
+}
+
+async function triggerDeploy(slug, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Bezig...';
+
+  try {
+    const res  = await fetch(`/api/prospects/${slug}/deploy`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.ok) {
+      const pane = document.getElementById('pane-deploy');
+      if (pane) loadDeploy(pane);
+    } else {
+      btn.disabled = false;
+      btn.textContent = '▶ Deploy';
+      alert(data.error ?? 'Deploy mislukt');
+    }
+  } catch {
+    btn.disabled = false;
+    btn.textContent = '▶ Deploy';
+    alert('Verbindingsfout');
+  }
+}
+
+function fmtDuration(s) {
+  if (s == null) return '–';
+  s = Math.round(s);
+  return s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`;
+}
+
+async function loadCosts(pane) {
+  try {
+    const res  = await fetch(`/api/prospects/${activeSlug}/costs`);
+    const data = await res.json();
+
+    if (!data.costs || data.costs.length === 0) {
+      const html = '<div class="modal-empty">Nog geen kosteninformatie beschikbaar — pipeline nog niet uitgevoerd.</div>';
+      cache[activeSlug] = cache[activeSlug] || {};
+      cache[activeSlug]['costs'] = html;
+      pane.innerHTML = html;
+      return;
+    }
+
+    const fmt = n => (n || 0).toLocaleString('nl-NL');
+    const rows = data.costs.map(c => `
+      <tr>
+        <td>${esc(c.step)}</td>
+        <td style="color:var(--muted);font-size:11px">${esc(c.model || '–')}</td>
+        <td style="text-align:right">${fmt(c.input_tokens)}</td>
+        <td style="text-align:right">${fmt(c.output_tokens)}</td>
+        <td style="text-align:right;color:var(--green);font-variant-numeric:tabular-nums">$${(c.cost||0).toFixed(4)}</td>
+      </tr>`).join('');
+
+    // Timing bars
+    let timingHtml = '';
+    if (data.timings && data.timings.length > 0) {
+      const maxDur = Math.max(...data.timings.map(t => t.duration_s || 0), 1);
+      const timingRows = data.timings.map(t => {
+        const pct = Math.round((t.duration_s / maxDur) * 100);
+        const cls = t.ok === false ? 'failed' : '';
+        return `
+          <div class="timing-row">
+            <div class="timing-label" title="${esc(t.step)}">${esc(t.step)}</div>
+            <div class="timing-bar-track"><div class="timing-bar-fill ${cls}" style="width:${pct}%"></div></div>
+            <div class="timing-value">${fmtDuration(t.duration_s)}</div>
+          </div>`;
+      }).join('');
+      timingHtml = `
+        <div class="timing-section">
+          <div class="timing-section-title">Tijdsduur per stap</div>
+          ${timingRows}
+          <div class="timing-total-row">
+            <span class="timing-total-label">Totale looptijd</span>
+            <span class="timing-total-value">${fmtDuration(data.total_duration_s)}</span>
+          </div>
+        </div>`;
+    }
+
+    const html = `
+      <table class="cost-table">
+        <thead>
+          <tr>
+            <th>Stap</th>
+            <th>Model</th>
+            <th style="text-align:right">Input tokens</th>
+            <th style="text-align:right">Output tokens</th>
+            <th style="text-align:right">Kosten (USD)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="cost-total-box">
+        <span class="cost-total-label">Totaal geschatte kosten</span>
+        <span class="cost-total-value">$${(data.total||0).toFixed(4)}</span>
+      </div>
+      <div style="color:var(--muted);font-size:11px;margin-top:10px">
+        Op basis van Anthropic publieke tarieven per 1M tokens. Excl. crawling en infrastructuurkosten.
+      </div>
+      ${timingHtml}`;
+
+    cache[activeSlug] = cache[activeSlug] || {};
+    cache[activeSlug]['costs'] = html;
+    pane.innerHTML = html;
+  } catch (err) {
+    pane.innerHTML = `<div class="modal-empty">Fout bij laden: ${err.message}</div>`;
+  }
+}
+
+async function loadPages(pane) {
+  try {
+    const res  = await fetch(`/api/prospects/${activeSlug}/pages`);
+    const data = await res.json();
+    const pages = data.pages || [];
+    const overflow = data.overflow_pages || [];
+
+    if (!pages.length) {
+      pane.innerHTML = '<div class="modal-empty">Nog geen paginalijst — voer eerst de pipeline uit.</div>';
+      return;
+    }
+
+    const existing = pages.filter(p => p.exists).length;
+    const missing  = pages.length - existing;
+
+    const buildRow = (p, isOverflow = false) => {
+      const statusHtml = isOverflow
+        ? `<span class="status-dot" style="color:var(--muted)">— Optioneel</span>`
+        : p.exists
+          ? `<span class="status-dot exists">✓ Gebouwd</span>`
+          : `<span class="status-dot missing">○ Ontbreekt</span>`;
+
+      const pageUrl = p.file === 'index.html'
+        ? `/sites/${activeSlug}/`
+        : `/sites/${activeSlug}/${p.file}`;
+
+      const actionHtml = (!isOverflow && p.exists)
+        ? `<div style="display:flex;gap:6px;justify-content:flex-end">
+             <a class="btn-sm primary" href="${pageUrl}" target="_blank">↗ Bekijk</a>
+             <button class="btn-sm" onclick="regeneratePage('${activeSlug}',${JSON.stringify(p)},this)">↺ Opnieuw</button>
+           </div>`
+        : (isOverflow && p.exists)
+          ? `<div style="display:flex;gap:6px;justify-content:flex-end">
+               <a class="btn-sm primary" href="${pageUrl}" target="_blank">↗ Bekijk</a>
+               <button class="btn-sm" onclick="regeneratePage('${activeSlug}',${JSON.stringify(p)},this)">↺ Opnieuw</button>
+             </div>`
+          : `<button class="btn-generate" id="gen-${esc(p.file)}" onclick="generatePage('${activeSlug}',${JSON.stringify(p)},this)">Genereer</button>`;
+
+      return `<tr style="${isOverflow ? 'opacity:0.7' : ''}">
+        <td><strong>${esc(p.file)}</strong><br><span style="color:var(--muted);font-size:11px">${esc(p.title)}</span></td>
+        <td style="color:var(--muted);font-size:11px;max-width:220px">${esc(p.description||'')}</td>
+        <td>${statusHtml}</td>
+        <td style="text-align:right">${actionHtml}</td>
+      </tr>`;
+    };
+
+    const rows = pages.map(p => buildRow(p, false)).join('');
+
+    let overflowSection = '';
+    if (overflow.length) {
+      const overflowRows = overflow.map(p => buildRow(p, true)).join('');
+      overflowSection = `
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+            <strong style="color:var(--text)">${overflow.length} aanvullende pagina's</strong>
+            — niet automatisch gegenereerd, maar wel beschikbaar om handmatig toe te voegen
+          </div>
+          <table class="pages-table">
+            <tbody>${overflowRows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    pane.innerHTML = `
+      <div class="pages-summary">${existing} van ${pages.length} pagina's gebouwd${missing ? ` · <strong style="color:var(--yellow)">${missing} ontbreken</strong>` : ''}${overflow.length ? ` · <span style="color:var(--muted)">${overflow.length} optioneel</span>` : ''}</div>
+      <table class="pages-table">
+        <thead><tr>
+          <th>Bestand</th>
+          <th>Beschrijving</th>
+          <th>Status</th>
+          <th style="text-align:right"><button class="btn-sm" style="font-size:11px" onclick="reloadPages()">↺ Vernieuwen</button></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${overflowSection}`;
+  } catch (err) {
+    pane.innerHTML = `<div class="modal-empty">Fout bij laden: ${err.message}</div>`;
+  }
+}
+
+function reloadPages() {
+  if (cache[activeSlug]) delete cache[activeSlug]['pages'];
+  const pane = document.getElementById('pane-pages');
+  pane.innerHTML = '<div class="modal-empty"><div class="spinner" style="width:20px;height:20px;border-width:3px"></div></div>';
+  loadPages(pane);
+}
+
+async function generatePage(slug, page, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Bezig...';
+
+  try {
+    const res  = await fetch(`/api/prospects/${slug}/generate-page`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(page),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      btn.textContent = 'Gestart ✓';
+      btn.style.background = 'var(--green)';
+      // Poll totdat pagina bestaat
+      pollUntilPageExists(slug, page.file, btn);
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Genereer';
+      alert(data.error ?? 'Mislukt');
+    }
+  } catch {
+    btn.disabled = false;
+    btn.textContent = 'Genereer';
+    alert('Verbindingsfout');
+  }
+}
+
+async function regeneratePage(slug, page, btn) {
+  if (!confirm(`"${page.file}" opnieuw genereren?`)) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  generatePage(slug, page, btn);
+}
+
+async function pollUntilPageExists(slug, file, btn) {
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const res  = await fetch(`/api/prospects/${slug}/pages`);
+      const data = await res.json();
+      const page = (data.pages || []).find(p => p.file === file);
+      if (page?.exists) {
+        if (cache[activeSlug]) delete cache[activeSlug]['pages'];
+        reloadPages();
+        return;
+      }
+    } catch {}
+  }
+  // Timeout — laat gebruiker handmatig vernieuwen
+  btn.textContent = 'Vernieuwen ↺';
+  btn.disabled = false;
+  btn.onclick = () => reloadPages();
+}
+
+async function permanentDelete(slug, name) {
+  if (!confirm(`"${name}" definitief verwijderen? Dit kan NIET ongedaan worden gemaakt.`)) return;
+
+  try {
+    const res  = await fetch(`/api/prospects/${slug}/delete-permanent`, { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      loadTrash();
+    } else {
+      alert(data.error ?? 'Verwijderen mislukt');
+    }
+  } catch {
+    alert('Verbindingsfout');
+  }
+}
+
+// ── Status polling ─────────────────────────────────────────────────────────
+
+let pipelineStatus = {};
+
+function slugify(name) {
+  return String(name || '').trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function updateActiveCard(status) {
+  document.querySelectorAll('.prospect-card').forEach(card => {
+    card.classList.remove('running');
+  });
+
+  if (!status.running || !status.prospect) return;
+
+  const card = document.getElementById(`card-${slugify(status.prospect)}`);
+  if (!card) return;
+
+  card.classList.add('running');
+  const fill  = card.querySelector('.progress-fill');
+  const stext = card.querySelector('.card-step-text');
+  const slbl  = card.querySelector('.card-step-label');
+
+  const pct = status.total > 0 ? Math.round((status.step_n / status.total) * 100) : 0;
+  if (fill)  fill.style.width   = pct + '%';
+  if (stext) stext.textContent  = status.step || 'Bezig...';
+  if (slbl)  slbl.textContent   = status.step_n && status.total
+    ? `Stap ${status.step_n} van ${status.total}` : '';
+}
+
+async function pollStatus() {
+  try {
+    const res  = await fetch('/api/status');
+    const data = await res.json();
+    pipelineStatus = data;
+    updateActiveCard(data);
+  } catch {}
+}
+
+// ── Prospects ──────────────────────────────────────────────────────────────
+
+async function loadProspects() {
+  try {
+    const res = await fetch('/api/prospects');
+    const data = await res.json();
+    render(data);
+    updateActiveCard(pipelineStatus);
+    lastUpdated = new Date();
+    document.getElementById('refresh-info').textContent =
+      `Bijgewerkt ${lastUpdated.toLocaleTimeString('nl-NL')} · ververst elke 30s`;
+  } catch (e) {
+    document.getElementById('refresh-info').textContent = 'Fout bij laden';
+  }
+}
+
+function render(prospects) {
+  document.getElementById('count').textContent = prospects.length;
+  const container = document.getElementById('prospects-container');
+
+  if (prospects.length === 0) {
+    container.innerHTML = '<div class="empty-state">Nog geen prospects — voeg er een toe hierboven.</div>';
+    return;
+  }
+
+  // Render kaarten, daarna direct actieve status toepassen
+  container.innerHTML = prospects.map(p => {
+    const cardClass = p.all_done ? 'done' : p.failed ? 'failed' : '';
+
+    const stagesHtml = STAGES.map((s, i) => {
+      const done = p.stages?.[s.key];
+      const cls  = p.failed && !done ? 'failed' : done ? 'done' : 'pending';
+      const conn = i < STAGES.length - 1
+        ? '<div class="stage-connector"></div>'
+        : '';
+      return `
+        <div class="stage">
+          <div class="stage-dot ${cls}">${s.icon}</div>
+          <div class="stage-label">${s.label}</div>
+        </div>
+        ${conn}`;
+    }).join('');
+
+    const previewBtn = p.site_url
+      ? `<a class="btn-sm primary" href="${p.site_url}" target="_blank">↗ Bekijken</a>`
+      : '';
+
+    const externalBtn = `<a class="btn-sm" href="${p.url}" target="_blank" title="Originele site">🌐</a>`;
+
+    const deleteBtn = `<button class="btn-sm" title="Verwijderen"
+        onclick="event.stopPropagation();startDelete('${p.slug}')">🗑</button>`;
+
+    return `
+      <div class="prospect-card ${cardClass}" id="card-${p.slug}" style="cursor:pointer"
+           onclick="openModal(event,'${p.slug}','${esc(p.name)}','${esc(p.url)}')">
+        <div class="prospect-meta">
+          <div class="prospect-name">${esc(p.name)}</div>
+          <div class="prospect-url">${esc(p.url)}</div>
+        </div>
+        <div class="prospect-right">
+          <div class="stages">${stagesHtml}</div>
+          <div class="actions" onclick="event.stopPropagation()">
+            ${externalBtn}${previewBtn}${deleteBtn}
+          </div>
+        </div>
+        <div class="card-pipeline" onclick="event.stopPropagation()">
+          <div class="pipeline-inline">
+            <div class="spinner" style="width:12px;height:12px;border-width:2px;flex-shrink:0"></div>
+            <div class="pipeline-step-info">
+              <div class="progress-track"><div class="progress-fill"></div></div>
+              <div class="pipeline-labels">
+                <span class="card-step-text"></span>
+                <span class="card-step-label"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="confirm-strip" onclick="event.stopPropagation()">
+          <span style="flex:1">Verwijderen? Bestanden zijn 14 dagen herstelbaar.</span>
+          <button class="btn-cancel" onclick="cancelDelete('${p.slug}')">Annuleer</button>
+          <button class="btn-danger" onclick="confirmDelete('${p.slug}','${esc(p.name)}')">Verwijderen</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function esc(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function addProspect() {
+  const name = document.getElementById('inp-name').value.trim();
+  const url  = document.getElementById('inp-url').value.trim();
+  const fb   = document.getElementById('add-feedback');
+  const btn  = document.getElementById('btn-add');
+
+  fb.textContent = '';
+  fb.className   = 'add-feedback';
+
+  if (!name || !url) {
+    fb.textContent = 'Vul zowel naam als URL in.';
+    fb.className = 'add-feedback err';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Bezig...';
+
+  try {
+    const res  = await fetch('/api/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, url }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      fb.textContent = `✓ '${name}' toegevoegd aan de queue.`;
+      fb.className = 'add-feedback ok';
+      document.getElementById('inp-name').value = '';
+      document.getElementById('inp-url').value  = '';
+      loadProspects();
+    } else {
+      fb.textContent = data.error ?? 'Onbekende fout';
+      fb.className = 'add-feedback err';
+    }
+  } catch (e) {
+    fb.textContent = 'Verbindingsfout';
+    fb.className = 'add-feedback err';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Toevoegen';
+  }
+}
+
+// Enter key in inputs
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.target.id === 'inp-name' || e.target.id === 'inp-url')) {
+    addProspect();
+  }
+});
+
+// ── Live log via SSE ───────────────────────────────────────────────────────
+
+function classForLine(line) {
+  if (!line.trim()) return 'empty';
+  if (line.includes('[OK]'))   return 'ok';
+  if (line.includes('[FAIL]')) return 'fail';
+  if (line.includes('[WARN]')) return 'warn';
+  if (line.includes('[STAP]')) return 'stap';
+  if (line.includes('[START]')) return 'start';
+  if (/^[═─]{10,}/.test(line)) return 'sep';
+  return 'info';
+}
+
+function appendLog(text) {
+  const panel = document.getElementById('log-panel');
+  const span  = document.createElement('span');
+  span.className = 'log-line ' + classForLine(text);
+  span.textContent = text || ' ';
+  panel.appendChild(span);
+  panel.appendChild(document.createTextNode('\n'));
+  if (autoScroll) panel.scrollTop = panel.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log-panel').innerHTML = '';
+}
+
+function connectSSE() {
+  if (sseConnected) return;
+  sseConnected = true;
+  const es = new EventSource('/api/logs');
+
+  es.onmessage = e => {
+    if (e.data !== '') appendLog(e.data);
+  };
+
+  es.onerror = () => {
+    sseConnected = false;
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+// Pauzeer auto-scroll als de gebruiker omhoog scrolt
+document.getElementById('log-panel')?.addEventListener('scroll', function() {
+  const el = this;
+  autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+});
+
+// Load + auto-refresh
+loadProspects();
+loadTrash();
+pollStatus();
+connectSSE();
+setInterval(loadProspects, 30000);
+setInterval(loadTrash,     60000);
+setInterval(pollStatus,     2000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,26 @@
+# Secrets
+.env
+
+# Gegenereerde output en data (lokaal, niet in repo)
+output/
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code interne bestanden
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
