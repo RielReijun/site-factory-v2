@@ -53,7 +53,7 @@ def create_github_repo(token: str, username: str, repo_name: str, description: s
     payload = {
         "name":        repo_name,
         "description": description,
-        "private":     False,
+        "private":     True,
         "auto_init":   False,
     }
     r = requests.post(
