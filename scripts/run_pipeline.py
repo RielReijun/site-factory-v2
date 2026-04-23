@@ -6,16 +6,20 @@ Steps: collect → research → brief → validate_brief → [repair_brief] → 
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pipeline_utils import slugify as _slugify  # noqa – run_pipeline heeft eigen slugify die name-based is
+from config import MAX_WORKERS
 
 _log_lock     = threading.Lock()
 _step_timings: list[dict] = []
@@ -86,15 +90,27 @@ def write_status(running: bool, prospect: str = "", step: str = "",
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        STATUS_FILE.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        payload = json.dumps(data, ensure_ascii=False)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(STATUS_FILE.parent), prefix=".status_tmp_", suffix=".json"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tf:
+                tf.write(payload)
+            os.replace(tmp_path, str(STATUS_FILE))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
     except Exception:
         pass
 
 
 # ── Prospect helpers ──────────────────────────────────────────────────────────
 
-def load_prospects() -> list:
-    return json.loads(PROSPECTS_FILE.read_text(encoding="utf-8"))
+from prospects_utils import load_prospects, update_prospect  # noqa: E402
 
 
 def find_prospect(prospects: list, name: str) -> tuple[int, dict]:
@@ -117,15 +133,7 @@ def find_next_prospect(prospects: list) -> str | None:
 
 
 def mark_site_done(name: str) -> None:
-    prospects = load_prospects()
-    for p in prospects:
-        if p.get("name", "").strip().lower() == name.strip().lower():
-            p["site_status"] = "done"
-            break
-    PROSPECTS_FILE.write_text(
-        json.dumps(prospects, indent=2, ensure_ascii=False),
-        encoding="utf-8"
-    )
+    update_prospect(name, site_status="done")
 
 
 def slugify(name: str) -> str:
@@ -357,6 +365,25 @@ def step_repair_site(site_dir: Path, json_out: Path, n: int, total: int, prospec
     if json_out.exists():
         cmd += ["--validation-json", str(json_out)]
     return run_cmd(cmd, "repair_site", n, total, prospect)
+
+
+def step_check_content(site_dir: Path, collected_path: Path, company_name: str,
+                       n: int, total: int, prospect: str) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "validate_generated_content.py"),
+        "--site-dir",       str(site_dir),
+        "--collected-path", str(collected_path),
+        "--company",        company_name,
+    ]
+    return run_cmd(cmd, "content_check", n, total, prospect)
+
+
+def step_screenshot_validate(site_dir: Path, n: int, total: int, prospect: str) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "screenshot_validate.py"),
+        "--site-dir", str(site_dir),
+    ]
+    return run_cmd(cmd, "screenshot_validate", n, total, prospect)
 
 
 def step_polish_site(site_dir: Path, company_name: str, n: int, total: int, prospect: str) -> bool:
@@ -662,7 +689,6 @@ def main():
             log("[WARN] Geen header/footer gevonden in homepage — subpagina's krijgen geen structuurreferentie")
 
         # ── Fase 2: subpagina's parallel met homepage als referentie ─────────
-        MAX_WORKERS = 3
         failed_units: list[str] = []
         batch_start = time.monotonic()
         # Stuur de volledige homepage als referentie naar subpagina's zodat ze dezelfde
@@ -791,6 +817,14 @@ def main():
             # (hamburger, sr-only, footerYear, ref-files) die de validator niet dekt
             n += 1
             step_repair_site(site_dir, json_out, n, total, company_name)
+
+        # ── Content-check: bedrijfsnaam, contact, placeholders, paginastructuur ──
+        n += 1
+        step_check_content(site_dir, collected_path, company_name, n, total, company_name)
+
+        # ── Screenshot-validatie: visuele problemen detecteren via Claude Vision ──
+        n += 1
+        step_screenshot_validate(site_dir, n, total, company_name)
 
         # ── Polish: dedupliceer pagina's + herstel header-consistentie + demo-banner ──
         n += 1

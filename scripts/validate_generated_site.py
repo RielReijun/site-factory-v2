@@ -5,6 +5,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pipeline_utils import PLACEHOLDER_PATTERNS_LABELED as PLACEHOLDER_PATTERNS  # noqa: F401
+
 
 # ── Verwachte bestandsstructuur ────────────────────────────────────────────────
 
@@ -37,16 +39,6 @@ A_HREF_RE = re.compile(
     re.IGNORECASE,
 )
 
-PLACEHOLDER_PATTERNS = [
-    (r"\btodo\b",           "TODO"),
-    (r"\btktk\b",           "TKTK"),
-    (r"\[placeholder\]",    "[placeholder]"),
-    (r"\bcoming soon\b",    "coming soon"),
-    (r"\binsert text\b",    "insert text"),
-    (r"\bvoorbeeldtekst\b", "voorbeeldtekst"),
-    (r"\blorem ipsum\b",    "lorem ipsum"),
-]
-
 FILE_MARKER_RE = re.compile(r"===FILE:|===END_FILE===")
 
 CTA_PATTERN = re.compile(
@@ -55,7 +47,7 @@ CTA_PATTERN = re.compile(
 )
 
 EXTERNAL_PREFIXES = ("http://", "https://", "mailto:", "tel:", "javascript:")
-MIN_HOMEPAGE_CHARS = 3000
+from config import MIN_HOMEPAGE_CHARS
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

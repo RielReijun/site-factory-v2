@@ -12,25 +12,7 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
-PROSPECTS_FILE = Path("/workspace/data/prospects.json")
-DATA_DIR       = Path("/workspace/data")
-
-
-def slugify(text: str) -> str:
-    text = text.strip().lower()
-    text = re.sub(r"^https?://", "", text)
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    return text.strip("-")
-
-
-def load_prospects() -> list:
-    return json.loads(PROSPECTS_FILE.read_text(encoding="utf-8"))
-
-
-def save_prospects(prospects: list) -> None:
-    PROSPECTS_FILE.write_text(
-        json.dumps(prospects, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+from pipeline_utils import slugify, load_prospects, get_model, PROSPECTS_FILE, DATA_DIR
 
 
 def main():
@@ -39,13 +21,14 @@ def main():
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    model   = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    model   = get_model()
     if not api_key:
         print("[FAIL] ANTHROPIC_API_KEY ontbreekt")
         sys.exit(1)
 
     agency_name  = os.getenv("AGENCY_NAME",  "")
     agency_email = os.getenv("AGENCY_EMAIL", "")
+    agency_url   = os.getenv("AGENCY_URL",   "")
 
     prospects = load_prospects()
     prospect  = next((p for p in prospects if p.get("name", "").strip().lower() == args.name.strip().lower()), None)
@@ -86,7 +69,8 @@ Toon:
 - Geen bulleted lijstjes, geen headers, gewone alinea's
 - Maximaal 3 korte alinea's
 - Noem de prijs gewoon en zelfverzekerd, niet verontschuldigend
-- Sluit af met naam van de afzender als die beschikbaar is
+- Sluit af met iets in de trant van: "Het is nog niet perfect, maar de nieuwe basis is gezet. Ik hoop dat we samen verder kunnen bouwen." Pas de exacte bewoording aan zodat het past bij de toon van de mail, maar de boodschap (bescheiden, samenwerkingsgericht, ruimte voor verbetering) moet erin zitten.
+- Daarna alleen de naam van de afzender, geen verdere afsluiting
 
 Bedrijfscontext uit de briefing:
 {briefing[:3000]}
@@ -109,25 +93,21 @@ Gebruik GEEN em-dashes (—). Gebruik een komma of punt waar dat natuurlijker kl
 
     mail_text = response.content[0].text.strip()
 
-    # Voeg afzenderinfo toe als die beschikbaar is
-    if agency_name or agency_email:
-        footer = "\n\n--\n"
-        if agency_name:
-            footer += agency_name + "\n"
-        if agency_email:
-            footer += agency_email + "\n"
-        mail_text += footer
+    footer_lines = []
+    if agency_name:
+        footer_lines.append(agency_name)
+    if agency_email:
+        footer_lines.append(agency_email)
+    if agency_url:
+        footer_lines.append(agency_url)
+    if footer_lines:
+        mail_text += "\n\n--\n" + "\n".join(footer_lines) + "\n"
 
     out_path.write_text(mail_text, encoding="utf-8")
     print(f"[OK]  Mail opgeslagen: {out_path}")
 
-    # Sla status op in prospects.json
-    for i, p in enumerate(prospects):
-        if p.get("name", "").strip().lower() == args.name.strip().lower():
-            prospects[i]["mail_status"] = "done"
-            prospects[i]["mail_path"]   = str(out_path)
-            break
-    save_prospects(prospects)
+    from prospects_utils import update_prospect
+    update_prospect(args.name, mail_status="done", mail_path=str(out_path))
 
 
 if __name__ == "__main__":

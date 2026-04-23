@@ -12,8 +12,8 @@ x-base: &base
     - ./app:/workspace/app
     - ./data:/workspace/data
     - ./output:/workspace/output
-    - ./prompts:/workspace/prompts
-    - ./scripts:/workspace/scripts
+    - ./prompts:/workspace/prompts:ro
+    - ./scripts:/workspace/scripts:ro
 
 services:
   worker:
@@ -22,6 +22,16 @@ services:
     tty: true
     stdin_open: true
     command: bash
+    volumes:
+      - ./app:/workspace/app
+      - ./data:/workspace/data
+      - ./output:/workspace/output
+      - ./prompts:/workspace/prompts
+      - ./scripts:/workspace/scripts
+    deploy:
+      resources:
+        limits:
+          memory: 4g
 
   dashboard:
     <<: *base
@@ -30,6 +40,16 @@ services:
       - "8181:8181"
     command: python /workspace/app/server.py
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8181/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   scheduler:
     <<: *base
@@ -38,9 +58,17 @@ services:
       bash -c "
         echo '[INFO] Scheduler gestart — pipeline draait elk uur';
         while true; do
-          python /workspace/scripts/run_pipeline.py --auto || true;
+          if python /workspace/scripts/run_pipeline.py --auto; then
+            echo '[OK] Pipeline run geslaagd';
+          else
+            echo '[WARN] Pipeline run mislukt (exit '$?') — scheduler gaat door';
+          fi
           echo '[INFO] Wachten tot volgende run...';
           sleep 3600;
         done
       "
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4g

@@ -64,6 +64,7 @@ Gebruik onderstaande briefing om statische websitebestanden te genereren voor {c
 - Gebruik nette, production-minded code
 - Gebruik dezelfde visuele richting op alle pagina's
 - Gebruik GEEN em-dashes (—) in lopende tekst, gebruik een komma, punt of nieuwe zin als dat natuurlijker klinkt
+- Zorg altijd voor voldoende contrast: witte tekst op donkere achtergrond minimaal `rgba(255,255,255,0.9)`, nooit lager dan 0.85. Donkere tekst op lichte achtergrond: gebruik `var(--color-text)` of `#1a1a1a`, nooit een muted kleur op een al lichte achtergrond.
 
 ## Formulieren
 - Gebruik voor alle contactformulieren: `<form action="https://formspree.io/f/FORMSPREE_ID" method="POST">`
@@ -75,6 +76,26 @@ Gebruik onderstaande briefing om statische websitebestanden te genereren voor {c
 - Als er een adres in de briefing staat: voeg op de contactpagina een Google Maps embed in
 - Gebruik: `<iframe src="https://maps.google.com/maps?q=ADRES&output=embed" width="100%" height="300" style="border:0;border-radius:8px" allowfullscreen loading="lazy"></iframe>`
 - Vervang ADRES door het URL-encoded adres uit de briefing
+
+## FAQ accordion — ALTIJD deze structuur, geen uitzonderingen
+Gebruik NOOIT `<details>`/`<summary>` voor FAQ-secties. Gebruik uitsluitend:
+```html
+<div class="faq-item">
+  <button class="faq-question" aria-expanded="false">
+    Vraag hier
+    <svg class="faq-icon" viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+  </button>
+  <div class="faq-answer">
+    <p>Antwoord hier</p>
+  </div>
+</div>
+```
+Regels:
+- Container: ALTIJD `.faq-item` (nooit `.faq__item`)
+- Trigger: ALTIJD `<button class="faq-question">` (nooit `faq-item__question`, nooit `faq__question`)
+- Inhoud: ALTIJD `<div class="faq-answer">` (nooit `faq-item__answer`, nooit `faq__answer`)
+- Geen `hidden` attribuut op `.faq-answer` — de JS regelt zichtbaarheid via `max-height`
+- Wrapper voor meerdere items: `<div class="faq-list">` of `<section class="faq">`
 
 ## Wat NOOIT mag worden verzonnen
 Dit zijn secties die je WEGLAAT als de briefing er geen concrete data voor bevat:
@@ -116,6 +137,8 @@ Genereer ALLEEN dit bestand:
 ## Extra eisen
 - Maak een complete homepage
 - Inclusief header, hero, secties, intake CTA en footer
+- Voeg in `<head>` ALTIJD toe: `<meta name="viewport" content="width=device-width, initial-scale=1">`
+- Laad Google Fonts via `<link rel="stylesheet">` in `<head>` — NOOIT via @import in CSS
 - Verwijs naar assets/css/style.css (ALLEEN dit stylesheet, niets anders)
 - Verwijs naar assets/js/main.js (ALLEEN dit script, niets anders)
 - Gebruik géén inline CSS
@@ -171,7 +194,7 @@ Genereer ALLEEN dit bestand:
   main, form, input, textarea, button) zodat subpagina-elementen zonder eigen class-regel
   er netjes uitzien via overerving
 - Neem kleuren, fonts en stijlkeuzes over uit de originele CSS-referentie
-- Begin met @import voor Google Fonts (Montserrat + Open Sans of Roboto)
+- NOOIT @import in CSS — Google Fonts worden via `<link>` in HTML geladen, niet hier
 - Gebruik CSS variables in :root voor kleuren, spacing en fonts
 - Mobile first, geen comments
 - Dek af: header, mobile nav, hero, cards, grids, buttons, forms, footer, page hero
@@ -314,6 +337,8 @@ Genereer ALLEEN dit bestand:
 
 ## Extra eisen
 - Paginanaam: {title}{desc}
+- Voeg in `<head>` ALTIJD toe: `<meta name="viewport" content="width=device-width, initial-scale=1">`
+- Laad Google Fonts via `<link rel="stylesheet">` in `<head>` — NOOIT via @import in CSS
 - Verwijs naar assets/css/style.css en assets/js/main.js
 - Houd de HTML compact maar volledig: maximaal 450 regels
 """

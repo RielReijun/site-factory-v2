@@ -2,6 +2,7 @@ import json
 import re
 import sys
 import time
+import xml.etree.ElementTree as ET
 from collections import deque
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urldefrag
@@ -9,13 +10,11 @@ from urllib.parse import urljoin, urlparse, urldefrag
 import requests
 from bs4 import BeautifulSoup
 
-
-PROSPECTS_FILE = Path("/workspace/data/prospects.json")
-DATA_DIR = Path("/workspace/data")
-
-CRAWL_DELAY = 0.5   # seconden tussen requests
-MAX_PAGES   = 50    # maximaal aantal HTML-pagina's om te crawlen
-MAX_ASSETS  = 150   # maximaal aantal assets te downloaden
+from pipeline_utils import (
+    slugify, load_prospects, extract_visible_text,
+    PROSPECTS_FILE, DATA_DIR,
+)
+from config import CRAWL_DELAY, MAX_PAGES, MAX_ASSETS
 
 HEADERS = {
     "User-Agent": "SiteFactoryBot/0.1 (+internal use)"
@@ -90,24 +89,166 @@ def url_to_asset_path(url: str) -> Path | None:
     return Path("assets") / rel
 
 
-# ── Tekst extractie ───────────────────────────────────────────────────────────
+# ── Structured data extractie ────────────────────────────────────────────────
 
-def extract_visible_text(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    for tag in soup(["script", "style", "noscript", "svg"]):
-        tag.decompose()
-    text = soup.get_text(separator="\n")
-    lines = [line.strip() for line in text.splitlines()]
-    return "\n".join(line for line in lines if line)
+def extract_meta_tags(soup: BeautifulSoup) -> dict:
+    """Haal relevante meta-tags op uit een pagina."""
+    result = {}
+    for tag in soup.find_all("meta"):
+        name  = (tag.get("name") or tag.get("property") or "").lower().strip()
+        content = tag.get("content", "").strip()
+        if not name or not content:
+            continue
+        if name in ("description", "og:description", "twitter:description"):
+            result.setdefault("description", content)
+        elif name in ("og:title", "twitter:title"):
+            result.setdefault("og_title", content)
+        elif name in ("og:image", "twitter:image"):
+            result.setdefault("og_image", content)
+        elif name == "keywords":
+            result["keywords"] = content
+    return result
+
+
+def extract_json_ld(soup: BeautifulSoup) -> list:
+    """Extraheer alle JSON-LD blokken uit een pagina."""
+    blocks = []
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+            blocks.append(data)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return blocks
+
+
+def extract_nav_structure(soup: BeautifulSoup) -> list[str]:
+    """Haal de navigatiestructuur op (tekst van links in <nav>)."""
+    items = []
+    for nav in soup.find_all("nav"):
+        for a in nav.find_all("a", href=True):
+            text = a.get_text(strip=True)
+            if text and len(text) < 60:
+                items.append(text)
+    seen = set()
+    return [x for x in items if not (x in seen or seen.add(x))]
+
+
+def extract_social_links(soup: BeautifulSoup) -> dict[str, str]:
+    """Haal social media links op uit de pagina."""
+    platforms = {
+        "facebook":  r"facebook\.com/",
+        "instagram": r"instagram\.com/",
+        "linkedin":  r"linkedin\.com/",
+        "twitter":   r"twitter\.com/|x\.com/",
+        "youtube":   r"youtube\.com/",
+        "tiktok":    r"tiktok\.com/",
+    }
+    result = {}
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        for name, pattern in platforms.items():
+            if name not in result and re.search(pattern, href, re.IGNORECASE):
+                result[name] = href
+    return result
+
+
+def extract_contact_info(soup: BeautifulSoup) -> dict:
+    """Haal telefoonnummer, e-mail en adres op uit de pagina."""
+    result = {}
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.startswith("tel:") and "phone" not in result:
+            result["phone"] = href[4:].strip()
+        elif href.startswith("mailto:") and "email" not in result:
+            result["email"] = href[7:].split("?")[0].strip()
+    address_tag = soup.find("address")
+    if address_tag:
+        result["address"] = address_tag.get_text(separator=" ", strip=True)
+    return result
+
+
+def fetch_sitemap_urls(start_url: str, session: requests.Session) -> list[str]:
+    """Probeer sitemap.xml en sitemap_index.xml op te halen; geef gevonden URLs terug."""
+    parsed   = urlparse(start_url)
+    base     = f"{parsed.scheme}://{parsed.netloc}"
+    candidates = [
+        f"{base}/sitemap.xml",
+        f"{base}/sitemap_index.xml",
+        f"{base}/sitemap-index.xml",
+    ]
+    urls: list[str] = []
+    for sitemap_url in candidates:
+        r = fetch(sitemap_url, session)
+        if r is None or "xml" not in r.headers.get("content-type", ""):
+            continue
+        try:
+            root = ET.fromstring(r.content)
+            ns   = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+            # sitemap index → haal child sitemaps op
+            for loc in root.findall(".//sm:loc", ns):
+                loc_url = loc.text.strip() if loc.text else ""
+                if not loc_url:
+                    continue
+                if loc_url.endswith(".xml"):
+                    sub = fetch(loc_url, session)
+                    if sub and "xml" in sub.headers.get("content-type", ""):
+                        try:
+                            sub_root = ET.fromstring(sub.content)
+                            for sub_loc in sub_root.findall(".//sm:loc", ns):
+                                if sub_loc.text:
+                                    urls.append(sub_loc.text.strip())
+                        except ET.ParseError:
+                            pass
+                else:
+                    urls.append(loc_url)
+            print(f"[INFO] Sitemap gevonden: {sitemap_url} ({len(urls)} URLs)")
+            break
+        except ET.ParseError:
+            continue
+    return urls
 
 
 # ── Ophalen en opslaan ────────────────────────────────────────────────────────
 
 def fetch(url: str, session: requests.Session) -> requests.Response | None:
+    import ssl as _ssl
+    import requests.exceptions as _rex
+
+    def _get(u, verify=True):
+        return session.get(u, headers=HEADERS, timeout=20,
+                           allow_redirects=True, verify=verify)
+
     try:
-        r = session.get(url, headers=HEADERS, timeout=20, allow_redirects=True)
+        r = _get(url)
         r.raise_for_status()
         return r
+    except (_rex.SSLError, _ssl.SSLError):
+        # Geen geldig SSL-certificaat: probeer zonder verificatie
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            r = _get(url, verify=False)
+            r.raise_for_status()
+            print(f"[WARN] SSL-verificatie uitgeschakeld voor: {url}")
+            return r
+        except Exception as e2:
+            print(f"[WARN] Ophalen mislukt (ook zonder SSL): {url} — {e2}")
+            return None
+    except (_rex.ConnectionError, _rex.Timeout) as e:
+        # https:// werkt niet: probeer http://
+        if url.startswith("https://"):
+            http_url = "http://" + url[8:]
+            try:
+                r = _get(http_url)
+                r.raise_for_status()
+                print(f"[WARN] Fallback naar HTTP: {http_url}")
+                return r
+            except Exception as e2:
+                print(f"[WARN] Ophalen mislukt (https + http): {url} — {e2}")
+                return None
+        print(f"[WARN] Ophalen mislukt: {url} — {e}")
+        return None
     except Exception as e:
         print(f"[WARN] Ophalen mislukt: {url} — {e}")
         return None
@@ -136,10 +277,29 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
 
     Geeft een meta-dict terug.
     """
-    base_domain = get_base_domain(start_url)
     session = requests.Session()
 
-    page_queue:  deque[str] = deque([normalize_url(start_url)])
+    # Controleer of de start-URL bereikbaar is; probeer http:// als https:// faalt
+    probe = fetch(start_url, session)
+    if probe is None and start_url.startswith("https://"):
+        http_url = "http://" + start_url[8:]
+        probe = fetch(http_url, session)
+        if probe is not None:
+            print(f"[WARN] Site gebruikt geen HTTPS, switched naar: {http_url}")
+            start_url = http_url
+
+    base_domain = get_base_domain(start_url)
+
+    # ── Fase 0: sitemap ophalen ───────────────────────────────────────────────
+    sitemap_urls = fetch_sitemap_urls(start_url, session)
+    seed_urls = [normalize_url(start_url)]
+    for u in sitemap_urls:
+        nu = normalize_url(u)
+        if is_same_domain(nu, base_domain) and not is_asset_url(nu):
+            seed_urls.append(nu)
+    seed_urls = list(dict.fromkeys(seed_urls))  # dedupliceer, behoud volgorde
+
+    page_queue:  deque[str] = deque(seed_urls)
     asset_queue: deque[str] = deque()
 
     visited_pages:  set[str] = set()
@@ -152,6 +312,15 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
 
     all_texts: list[str] = []
     homepage_html = ""
+
+    # Gestructureerde data — gevuld tijdens crawl
+    structured: dict = {
+        "meta_tags":    {},   # velden uit de homepage meta
+        "json_ld":      [],   # alle JSON-LD blokken van alle pagina's
+        "nav":          [],   # navigatiestructuur van de homepage
+        "social_links": {},   # social media URLs
+        "contact":      {},   # telefoon, e-mail, adres
+    }
 
     print(f"[INFO] Start crawl: {start_url}")
     print(f"[INFO] Domein: {base_domain} | Max pagina's: {MAX_PAGES}")
@@ -188,6 +357,23 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
         if not homepage_html:
             homepage_html = html
             save_file(target_dir / "raw.html", html)
+            # Homepage-specifieke extractie (eenmalig)
+            structured["meta_tags"]    = extract_meta_tags(soup)
+            structured["nav"]          = extract_nav_structure(soup)
+            structured["social_links"] = extract_social_links(soup)
+            structured["contact"]      = extract_contact_info(soup)
+
+        # JSON-LD van elke pagina meenemen
+        page_ld = extract_json_ld(soup)
+        if page_ld:
+            structured["json_ld"].extend(page_ld)
+
+        # Contact info aanvullen vanuit andere pagina's (tel/mail kunnen elders staan)
+        if not structured["contact"].get("phone") or not structured["contact"].get("email"):
+            extra = extract_contact_info(soup)
+            for key in ("phone", "email", "address"):
+                if extra.get(key) and not structured["contact"].get(key):
+                    structured["contact"][key] = extra[key]
 
         # Verzamel zichtbare tekst
         page_text = extract_visible_text(html)
@@ -307,6 +493,23 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
 
     save_file(target_dir / "meta.json", json.dumps(meta, indent=2, ensure_ascii=False))
 
+    # Structured data opslaan
+    save_file(
+        target_dir / "structured_data.json",
+        json.dumps(structured, indent=2, ensure_ascii=False),
+    )
+    sd_summary = []
+    if structured["meta_tags"]:
+        sd_summary.append(f"meta-tags: {list(structured['meta_tags'].keys())}")
+    if structured["json_ld"]:
+        sd_summary.append(f"JSON-LD blokken: {len(structured['json_ld'])}")
+    if structured["contact"]:
+        sd_summary.append(f"contact: {list(structured['contact'].keys())}")
+    if structured["social_links"]:
+        sd_summary.append(f"socials: {list(structured['social_links'].keys())}")
+    if sd_summary:
+        print(f"[OK] Structured data: {' | '.join(sd_summary)}")
+
     print(f"[OK] Pagina's gecrawld: {len(pages_saved)}")
     print(f"[OK] Assets gedownload: {len(assets_saved)}")
     if failed_urls:
@@ -317,20 +520,8 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
 
 # ── Prospects integratie ──────────────────────────────────────────────────────
 
-def slugify(text: str) -> str:
-    text = text.strip().lower()
-    text = re.sub(r"^https?://", "", text)
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    return text.strip("-")
-
-
-def load_prospects() -> list:
-    if not PROSPECTS_FILE.exists():
-        raise FileNotFoundError(f"Prospects-bestand niet gevonden: {PROSPECTS_FILE}")
-    return json.loads(PROSPECTS_FILE.read_text(encoding="utf-8"))
-
-
 def save_prospects(prospects: list) -> None:
+    # Niet meer bulk-schrijven; gebruik update_prospect per item voor thread-safety
     PROSPECTS_FILE.write_text(
         json.dumps(prospects, indent=2, ensure_ascii=False),
         encoding="utf-8"
@@ -385,8 +576,7 @@ def main():
     target_dir = DATA_DIR / slug
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    MINIMUM_PAGES      = 1
-    MINIMUM_TEXT_CHARS = 500
+    from config import MINIMUM_PAGES, MINIMUM_TEXT_CHARS
 
     try:
         meta = crawl_site(url, target_dir)
@@ -397,6 +587,23 @@ def main():
             json.dumps(meta, indent=2, ensure_ascii=False),
             encoding="utf-8"
         )
+
+        # ── Referentiesite crawlen (als opgegeven) ───────────────────────────
+        reference_url = prospect.get("reference_url", "").strip()
+        if reference_url:
+            ref_dir = target_dir / "reference"
+            ref_dir.mkdir(parents=True, exist_ok=True)
+            print(f"[INFO] Referentiesite crawlen: {reference_url}")
+            try:
+                ref_meta = crawl_site(reference_url, ref_dir)
+                ref_meta["is_reference"] = True
+                (ref_dir / "meta.json").write_text(
+                    json.dumps(ref_meta, indent=2, ensure_ascii=False),
+                    encoding="utf-8"
+                )
+                print(f"[OK]  Referentiesite gecrawld: {ref_meta.get('pages_crawled', 0)} pagina('s)")
+            except Exception as ref_err:
+                print(f"[WARN] Referentiesite crawl mislukt: {ref_err} — pipeline gaat door")
 
         # ── Kwaliteitscheck: genoeg data om verder te gaan? ──────────────────
         pages_crawled = meta.get("pages_crawled", 0)
@@ -410,22 +617,19 @@ def main():
                 "Pipeline gestopt om verzonnen content te voorkomen."
             )
             print(f"[FAIL] {reason}")
-            prospects[index]["status"] = "insufficient"
-            prospects[index]["error"]  = reason
-            save_prospects(prospects)
+            from prospects_utils import update_prospect
+            update_prospect(name, status="insufficient", error=reason)
             sys.exit(1)
 
-        prospects[index]["status"]         = "collected"
-        prospects[index]["collected_path"] = str(target_dir)
-        save_prospects(prospects)
+        from prospects_utils import update_prospect
+        update_prospect(name, status="collected", collected_path=str(target_dir))
         print("[OK] Prospect status bijgewerkt naar 'collected'")
 
     except SystemExit:
         raise
     except Exception as e:
-        prospects[index]["status"] = "failed"
-        prospects[index]["error"]  = str(e)
-        save_prospects(prospects)
+        from prospects_utils import update_prospect
+        update_prospect(name, status="failed", error=str(e))
         print(f"[FAIL] Collect mislukt: {e}")
         raise
 

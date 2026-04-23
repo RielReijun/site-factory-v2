@@ -191,7 +191,7 @@ def setup_cloudflare(token: str, account_id: str, project_name: str,
 
     print(f"[INFO] Cloudflare Pages project aanmaken: {project_name}")
     result = create_cf_pages_project(token, account_id, project_name, github_username, repo_name)
-    subdomain = result.get("subdomain", "")
+    subdomain = result.get("subdomain", "").removesuffix(".pages.dev")
     url = f"https://{subdomain}.pages.dev" if subdomain else ""
     print(f"[OK]  Cloudflare project aangemaakt: {url or project_name}")
 

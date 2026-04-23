@@ -11,4 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Playwright + Chromium voor screenshot-validatie
+RUN playwright install-deps chromium 2>/dev/null || true
+RUN playwright install chromium
+
 CMD ["bash"]

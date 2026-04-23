@@ -17,27 +17,16 @@ import requests
 from anthropic import Anthropic
 from bs4 import BeautifulSoup
 
+from pipeline_utils import load_prospects, extract_visible_text, get_model, with_retry, PROSPECTS_FILE
+from config import CRAWL_DELAY as _DEFAULT_CRAWL_DELAY
 
-PROSPECTS_FILE = Path("/workspace/data/prospects.json")
-
-HEADERS = {"User-Agent": "SiteFactoryBot/0.1 (+internal use)"}
+HEADERS        = {"User-Agent": "SiteFactoryBot/0.1 (+internal use)"}
 CRAWL_TIMEOUT  = 15
 CRAWL_DELAY    = 0.8
-MAX_COMP_PAGES = 3   # homepage + max 2 interne pagina's per concurrent
+MAX_COMP_PAGES = 3
 
 
 # ── Prospects ─────────────────────────────────────────────────────────────────
-
-def load_prospects():
-    return json.loads(PROSPECTS_FILE.read_text(encoding="utf-8"))
-
-
-def save_prospects(prospects):
-    PROSPECTS_FILE.write_text(
-        json.dumps(prospects, indent=2, ensure_ascii=False),
-        encoding="utf-8"
-    )
-
 
 def find_prospect(prospects, name=None, force=False):
     if name:
@@ -60,13 +49,6 @@ def find_prospect(prospects, name=None, force=False):
 
 
 # ── Crawler ───────────────────────────────────────────────────────────────────
-
-def extract_visible_text(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
-    for tag in soup(["script", "style", "noscript", "svg"]):
-        tag.decompose()
-    lines = [l.strip() for l in soup.get_text(separator="\n").splitlines()]
-    return "\n".join(l for l in lines if l)
 
 
 def fetch(url: str, session: requests.Session) -> str | None:
@@ -141,14 +123,15 @@ Geef ALLEEN dit JSON-object terug, zonder uitleg:
 ## Websitetekst van {company_name}
 {site_text[:12000]}
 """
-    response = client.messages.create(
-        model=model,
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}]
+    response = with_retry(
+        lambda: client.messages.create(
+            model=model, max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}]
+        ),
+        label="identify_competitors",
     )
     raw = "".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
 
-    # Strip markdown code fences (ook bij \r\n of spaties rondom de fence)
     raw = re.sub(r'^\s*```\w*\s*\n', '', raw)
     raw = re.sub(r'\n\s*```\s*$', '', raw)
     return json.loads(raw.strip()), response
@@ -228,10 +211,12 @@ Kleurgebruik, typografie, fotostijl, lay-outpatronen typisch voor deze sector.
 ## Samenvatting: kansen voor de nieuwe site van {company_name}
 Drie tot vijf concrete, prioritaire aanbevelingen.
 """
-    response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}]
+    response = with_retry(
+        lambda: client.messages.create(
+            model=model, max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        ),
+        label="research_report",
     )
     text = "".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
     return text, response
@@ -246,7 +231,7 @@ def main():
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    model   = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    model   = get_model()
 
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY ontbreekt")
@@ -325,8 +310,10 @@ def main():
     in1, out1 = _tok(r1, "input_tokens"), _tok(r1, "output_tokens")
     in2, out2 = _tok(r2, "input_tokens"), _tok(r2, "output_tokens")
 
+    from datetime import datetime, timezone
     research_meta = {
         "model": model,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "steps": [
             {"step": "identify_competitors",   "input_tokens": in1, "output_tokens": out1},
             {"step": "generate_research_report", "input_tokens": in2, "output_tokens": out2},
@@ -341,9 +328,8 @@ def main():
     )
     print(f"[OK]  Research metadata opgeslagen ({in1+in2} input / {out1+out2} output tokens)")
 
-    prospects[index]["research_status"] = "done"
-    prospects[index]["research_path"]   = str(research_path)
-    save_prospects(prospects)
+    from prospects_utils import update_prospect
+    update_prospect(args.name, research_status="done", research_path=str(research_path))
 
     print(f"[OK]  Prospect research_status bijgewerkt naar 'done'")
 

@@ -1,8 +1,10 @@
 import argparse
+import difflib
 import json
 import os
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from anthropic import Anthropic
@@ -282,12 +284,29 @@ def main():
     output_path = briefing_path if args.in_place else briefing_path.with_name(briefing_path.stem + ".repaired.md")
     write_text(output_path, repaired_brief)
 
+    # Sla een leesbaar diff-bestand op zodat je altijd kunt zien wat er gerepareerd werd
+    diff_lines = list(difflib.unified_diff(
+        current_brief.splitlines(keepends=True),
+        repaired_brief.splitlines(keepends=True),
+        fromfile="briefing.before-repair.md",
+        tofile="briefing.md",
+    ))
+    diff_path = briefing_path.with_name("repair_diff.txt")
+    if diff_lines:
+        write_text(diff_path, "".join(diff_lines))
+        print(f"[OK] Diff opgeslagen: {diff_path} ({len(diff_lines)} regels)")
+    else:
+        print("[INFO] Geen wijzigingen — geen diff opgeslagen")
+
     meta_path = briefing_path.with_name("repair_meta.json")
     meta = {
         "model":       model,
+        "repaired_at": datetime.now(timezone.utc).isoformat(),
         "source_file": str(briefing_path),
         "output_file": str(output_path),
         "backup_file": str(backup_path),
+        "diff_file":   str(diff_path) if diff_lines else None,
+        "changed":     bool(diff_lines),
         "stop_reason": stop_reason,
         "usage": {"output_tokens": output_tokens},
     }

@@ -5,15 +5,15 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
+from pipeline_utils import load_prospects, read_text_file, get_model, PROSPECTS_FILE
 
-PROSPECTS_FILE = Path("/workspace/data/prospects.json")
 
+from config import MIN_IMAGE_SIZE, MAX_IMAGES_BRIEF, MAX_SITE_TEXT_CHARS, MAX_CSS_CHARS, MAX_RESEARCH_CHARS, MAX_REF_TEXT_CHARS, MAX_REF_CSS_CHARS
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
-MIN_IMAGE_SIZE = 2000  # bytes — sla kleine iconen/favicons over
 
 
-def list_images(collected_path: Path, max_images: int = 30) -> list[str]:
+def list_images(collected_path: Path, max_images: int = MAX_IMAGES_BRIEF) -> list[str]:
     """Geef paden terug van gedownloade afbeeldingen, relatief aan collected_path."""
     assets_dir = collected_path / "assets"
     if not assets_dir.exists():
@@ -33,7 +33,7 @@ def list_images(collected_path: Path, max_images: int = 30) -> list[str]:
     return images[:max_images]
 
 
-def extract_css(collected_path: Path, max_chars: int = 10000) -> str:
+def extract_css(collected_path: Path, max_chars: int = MAX_CSS_CHARS) -> str:
     """Combineer CSS-bestanden uit de gecrawlde assets tot een beperkt overzicht."""
     css_dir = collected_path / "assets" / "css"
     if not css_dir.exists():
@@ -55,17 +55,6 @@ def extract_css(collected_path: Path, max_chars: int = 10000) -> str:
         if total >= max_chars:
             break
     return "\n\n".join(parts)
-
-
-def load_prospects():
-    return json.loads(PROSPECTS_FILE.read_text(encoding="utf-8"))
-
-
-def save_prospects(prospects):
-    PROSPECTS_FILE.write_text(
-        json.dumps(prospects, indent=2, ensure_ascii=False),
-        encoding="utf-8"
-    )
 
 
 def find_prospect(prospects, name=None, force=False):
@@ -91,15 +80,56 @@ def find_prospect(prospects, name=None, force=False):
     return None, None
 
 
-def read_text_file(path: Path) -> str:
-    if not path.exists():
+
+
+def build_structured_section(sd: dict) -> str:
+    """Zet structured_data.json om naar een leesbare sectie voor de briefing-prompt."""
+    parts = []
+
+    meta = sd.get("meta_tags", {})
+    if meta.get("description"):
+        parts.append(f"**Meta description:** {meta['description']}")
+    if meta.get("og_title"):
+        parts.append(f"**OG titel:** {meta['og_title']}")
+    if meta.get("keywords"):
+        parts.append(f"**Keywords:** {meta['keywords']}")
+
+    contact = sd.get("contact", {})
+    if contact:
+        c_parts = []
+        if contact.get("phone"):   c_parts.append(f"tel: {contact['phone']}")
+        if contact.get("email"):   c_parts.append(f"email: {contact['email']}")
+        if contact.get("address"): c_parts.append(f"adres: {contact['address']}")
+        if c_parts:
+            parts.append("**Contactgegevens:** " + " | ".join(c_parts))
+
+    social = sd.get("social_links", {})
+    if social:
+        parts.append("**Social media:** " + ", ".join(social.keys()))
+
+    nav = sd.get("nav", [])
+    if nav:
+        parts.append("**Navigatie:** " + " > ".join(nav[:12]))
+
+    json_ld = sd.get("json_ld", [])
+    if json_ld:
+        # Geef de eerste 3 blokken, gekort
+        ld_text = json.dumps(json_ld[:3], ensure_ascii=False, indent=2)
+        if len(ld_text) > 3000:
+            ld_text = ld_text[:3000] + "\n// ... afgekapt"
+        parts.append(f"**Structured data (JSON-LD):**\n```json\n{ld_text}\n```")
+
+    if not parts:
         return ""
-    return path.read_text(encoding="utf-8", errors="ignore")
+    return "## Gestructureerde bedrijfsdata (betrouwbare bron)\n" + "\n".join(parts) + "\n"
 
 
 def build_prompt(company_name: str, url: str, meta: dict, site_text: str,
-                 css_text: str = "", research_text: str = "", images: list[str] | None = None) -> str:
-    trimmed_text  = site_text[:20000]
+                 css_text: str = "", research_text: str = "", images: list[str] | None = None,
+                 structured_data: dict | None = None,
+                 reference_text: str = "", reference_url: str = "",
+                 reference_css: str = "") -> str:
+    trimmed_text  = site_text[:MAX_SITE_TEXT_CHARS]
 
     css_section = ""
     if css_text.strip():
@@ -116,7 +146,7 @@ Extraheer hieruit: exacte hex-kleuren, font-families, border-radius, spacing-pat
     if research_text.strip():
         research_section = f"""
 ## Marktonderzoek en concurrentieanalyse
-{research_text[:15000]}
+{research_text[:MAX_RESEARCH_CHARS]}
 """
 
     image_section = ""
@@ -128,6 +158,22 @@ De volgende bestanden zijn beschikbaar. Verwijs er in de briefing naar waar rele
 Geef aan op welke pagina's en secties ze logisch passen.
 
 {image_list}
+"""
+
+    structured_section = ""
+    if structured_data:
+        structured_section = build_structured_section(structured_data)
+
+    reference_section = ""
+    if reference_text.strip():
+        ref_css_block = ""
+        if reference_css.strip():
+            ref_css_block = f"\n\nCSS-stijlinspiratie van referentiesite:\n```css\n{reference_css[:MAX_REF_CSS_CHARS]}\n```"
+        reference_section = f"""
+## Referentiesite ter inspiratie
+URL: {reference_url or "onbekend"}
+Gebruik de stijl, structuur en toon van deze site als designinspiratie — niet de inhoud.
+{reference_text[:MAX_REF_TEXT_CHARS]}{ref_css_block}
 """
 
     return f"""
@@ -148,7 +194,7 @@ Regels:
 **Bedrijf:** {company_name}
 **URL:** {url}
 **Paginatitel:** {meta.get("title", "onbekend")}
-{css_section}{research_section}{image_section}
+{structured_section}{css_section}{research_section}{reference_section}{image_section}
 ## Websitetekst
 {trimmed_text}
 
@@ -223,7 +269,7 @@ def main():
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    model = get_model()
 
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY ontbreekt in environment")
@@ -256,30 +302,71 @@ def main():
     research_text = read_text_file(briefing_path.parent / "research.md")
     images    = list_images(target_dir)
 
+    sd_path = target_dir / "structured_data.json"
+    structured_data = json.loads(sd_path.read_text(encoding="utf-8")) if sd_path.exists() else None
+
+    # Referentiesite tekst + CSS (optioneel)
+    ref_dir = target_dir / "reference"
+    reference_text = read_text_file(ref_dir / "text.txt") if ref_dir.exists() else ""
+    reference_url  = prospect.get("reference_url", "")
+    reference_css  = ""
+    if ref_dir.exists():
+        ref_css_dir = ref_dir / "assets" / "css"
+        if ref_css_dir.exists():
+            parts, total = [], 0
+            for f in sorted(ref_css_dir.glob("*.css")):
+                try:
+                    c = f.read_text(encoding="utf-8", errors="ignore")[:5000]
+                    parts.append(c)
+                    total += len(c)
+                    if total >= 5000:
+                        break
+                except Exception:
+                    pass
+            reference_css = "\n".join(parts)
+
     if css_text:
         print(f"[INFO] CSS meegegeven: {len(css_text)} tekens")
     if research_text:
         print(f"[INFO] Research meegegeven: {len(research_text)} tekens")
     if images:
         print(f"[INFO] Afbeeldingen meegegeven: {len(images)}")
+    if structured_data:
+        ld_count = len(structured_data.get("json_ld", []))
+        print(f"[INFO] Structured data meegegeven (JSON-LD blokken: {ld_count})")
+    if reference_text:
+        print(f"[INFO] Referentiesite meegegeven: {len(reference_text)} tekens tekst")
 
     prompt = build_prompt(company_name, url, meta, site_text,
-                          css_text=css_text, research_text=research_text, images=images)
+                          css_text=css_text, research_text=research_text, images=images,
+                          structured_data=structured_data,
+                          reference_text=reference_text, reference_url=reference_url,
+                          reference_css=reference_css)
+
+    from pipeline_utils import with_retry
+    from config import RETRY_BASE_WAIT, MAX_RATE_RETRIES
 
     print(f"[INFO] Genereer briefing voor: {company_name}")
     print(f"[INFO] Model: {model}")
 
-    chunks = []
-    with client.messages.stream(
-        model=model,
-        max_tokens=5000,
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        for text in stream.text_stream:
-            print(text, end="", flush=True)
-            chunks.append(text)
-        print()
-        final = stream.get_final_message()
+    chunks: list[str] = []
+    final = None
+
+    def _stream():
+        nonlocal final
+        chunks.clear()
+        with client.messages.stream(
+            model=model,
+            max_tokens=5000,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                print(text, end="", flush=True)
+                chunks.append(text)
+            print()
+            final = stream.get_final_message()
+
+    with_retry(_stream, max_retries=MAX_RATE_RETRIES, base_wait=RETRY_BASE_WAIT, label="brief")
 
     briefing = "".join(chunks).strip()
 
@@ -288,8 +375,10 @@ def main():
 
     briefing_path.write_text(briefing, encoding="utf-8")
 
+    from datetime import datetime, timezone
     response_meta = {
-        "model": model,
+        "model":      model,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "stop_reason": getattr(final, "stop_reason", None),
         "usage": {
             "input_tokens":  getattr(final.usage, "input_tokens",  None) if getattr(final, "usage", None) else None,
@@ -302,9 +391,8 @@ def main():
         encoding="utf-8"
     )
 
-    prospects[index]["briefing_status"] = "done"
-    prospects[index]["briefing_path"] = str(briefing_path)
-    save_prospects(prospects)
+    from prospects_utils import update_prospect
+    update_prospect(args.name, briefing_status="done", briefing_path=str(briefing_path))
 
     print(f"[OK] Briefing opgeslagen in: {briefing_path} ({len(briefing)} tekens)")
     print(f"[OK] Response metadata opgeslagen in: {briefing_meta_path}")

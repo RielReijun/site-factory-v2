@@ -282,14 +282,19 @@ def inject_demo_banner(site_dir: Path, company_name: str) -> list[str]:
     Injecteer een vaste demo-banner bovenaan elke pagina.
     De banner is dismissable via een sluitknop en stored in sessionStorage.
     """
-    agency_name  = os.environ.get("AGENCY_NAME",  "Site Factory")
+    agency_name  = os.environ.get("AGENCY_NAME",  "")
     agency_email = os.environ.get("AGENCY_EMAIL", "")
+    agency_phone = os.environ.get("AGENCY_PHONE", "")
 
-    contact_part = f'<a href="mailto:{agency_email}" style="color:#fff;font-weight:600;text-decoration:underline">{agency_email}</a>' if agency_email else agency_name
+    email_line = f'<a href="mailto:{agency_email}" style="color:#6366f1;text-decoration:none;font-weight:500">{agency_email}</a>' if agency_email else ""
+    phone_line = f'<a href="tel:{agency_phone}" style="color:#6366f1;text-decoration:none;font-weight:500">{agency_phone}</a>' if agency_phone else ""
+    contact_lines = "<br>".join(filter(None, [email_line, phone_line]))
 
-    banner_html = f"""  <div id="{DEMO_BANNER_ID}" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#1e293b;color:#e2e8f0;font-family:sans-serif;font-size:13px;padding:9px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.4)">
-    <span style="flex:1">Demo gemaakt voor <strong style="color:#fff">{company_name}</strong> — interesse? Mail {contact_part}</span>
-    <button onclick="document.getElementById('{DEMO_BANNER_ID}').style.display='none';sessionStorage.setItem('{DEMO_BANNER_ID}','1')" style="background:none;border:1px solid rgba(255,255,255,.3);color:#e2e8f0;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px">×</button>
+    banner_html = f"""  <div id="{DEMO_BANNER_ID}" style="position:fixed;bottom:20px;right:20px;z-index:99999;background:#fff;color:#1e293b;font-family:sans-serif;font-size:13px;line-height:1.5;padding:14px 16px 12px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);max-width:220px;border:1px solid #e2e8f0">
+    <button onclick="document.getElementById('{DEMO_BANNER_ID}').style.display='none';sessionStorage.setItem('{DEMO_BANNER_ID}','1')" style="position:absolute;top:8px;right:10px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:15px;line-height:1;padding:0">×</button>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Demo</div>
+    <div style="font-weight:600;margin-bottom:8px;padding-right:16px">{company_name}</div>
+    <div style="font-size:12px;color:#475569">Interesse? Neem contact op:<br>{contact_lines}</div>
   </div>
   <script>if(sessionStorage.getItem('{DEMO_BANNER_ID}'))document.getElementById('{DEMO_BANNER_ID}').style.display='none';</script>"""
 
