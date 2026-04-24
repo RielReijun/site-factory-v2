@@ -24,10 +24,12 @@ VISION_PROMPT = """Je bekijkt een screenshot van een gegenereerde statische webs
 Beoordeel de pagina op de volgende visuele problemen en geef elk gevonden probleem een korte beschrijving.
 Wees specifiek — zeg niet "mogelijk contrast-probleem", maar "witte tekst op witte achtergrond in de hero-sectie".
 
+NEGEER volledig: een kleine demo-popup of badge rechtsonder in beeld — dit is een intentionele demo-banner en geen probleem.
+
 Kijk op:
 1. Kontrastproblemen — lichte tekst op lichte achtergrond of donkere tekst op donkere achtergrond
 2. Gebroken layout — secties die over elkaar vallen, elementen buiten het scherm, kolommen die niet kloppen
-3. Placeholder-content — lorem ipsum, [BEDRIJFSNAAM], ongeldige URL-tekst of duidelijk verzonnen namen
+3. Placeholder-content — lorem ipsum, [BEDRIJFSNAAM], ongeldige URL-tekst of duidelijk verzonnen namen (NIET de demo-popup)
 4. Lege secties — grote witte vlakken zonder inhoud waar duidelijk iets hoort te staan
 5. Typografische problemen — tekst die wordt afgesneden, onleesbaar kleine tekst, verkeerde lettergrootte
 
