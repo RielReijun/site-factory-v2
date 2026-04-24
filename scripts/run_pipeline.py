@@ -389,6 +389,14 @@ def step_screenshot_validate(site_dir: Path, n: int, total: int, prospect: str) 
     return run_cmd(cmd, "screenshot_validate", n, total, prospect)
 
 
+def step_cohesion_pass(site_dir: Path, n: int, total: int, prospect: str) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "cohesion_pass.py"),
+        "--site-dir", str(site_dir),
+    ]
+    return run_cmd(cmd, "cohesion_pass", n, total, prospect)
+
+
 def step_polish_site(site_dir: Path, company_name: str, n: int, total: int, prospect: str) -> bool:
     cmd = [
         "python", str(SCRIPTS_DIR / "polish_site.py"),
@@ -843,6 +851,11 @@ def main():
                     log("[INFO] Geen visuele issues — screenshot-repair overgeslagen")
             except Exception as e:
                 log(f"[WARN] Kon screenshot_validation.json niet lezen: {e}")
+
+        # ── Cohesion pass: AI-check op consistentie tussen alle pagina's ─────────
+        n += 1
+        log("\n[INFO] Cohesion pass uitvoeren (CSS-overrides voor consistentie subpagina's)...")
+        step_cohesion_pass(site_dir, n, total, company_name)
 
         # ── Polish: dedupliceer pagina's + herstel header-consistentie + demo-banner ──
         n += 1

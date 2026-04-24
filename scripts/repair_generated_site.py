@@ -952,6 +952,53 @@ def fix_footer(site_dir: Path) -> list[str]:
     return ["Footer-fix CSS toegevoegd (padding + links + footer-bottom)"]
 
 
+NAV_ACTIVE_JS = """
+/* nav-active: markeer de huidige pagina als actief in de navigatie */
+(function () {
+  var current = location.pathname.split('/').pop() || 'index.html';
+  document.querySelectorAll('nav a[href], header a[href]').forEach(function (a) {
+    var href = a.getAttribute('href').split('#')[0].split('?')[0];
+    if (href === current || (current === '' && href === 'index.html')) {
+      a.classList.add('is-active');
+      a.setAttribute('aria-current', 'page');
+    }
+  });
+})();
+"""
+
+NAV_ACTIVE_CSS = """
+/* nav-active: highlight huidige pagina in navigatie */
+nav a.is-active, header a.is-active,
+.site-nav a.is-active, .nav-list a.is-active,
+.main-nav a.is-active {
+  color: var(--color-primary, var(--accent, #6366f1)) !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid currentColor;
+}
+"""
+
+
+def fix_nav_active_state(site_dir: Path) -> list[str]:
+    """Voeg nav-active JS + CSS toe zodat de huidige pagina gemarkeerd is in de nav."""
+    fixes = []
+
+    js_path = site_dir / "assets" / "js" / "main.js"
+    if js_path.exists():
+        js = js_path.read_text(encoding="utf-8", errors="ignore")
+        if "nav-active" not in js:
+            js_path.write_text(js + NAV_ACTIVE_JS, encoding="utf-8")
+            fixes.append("Nav active state JS toegevoegd")
+
+    css_path = site_dir / "assets" / "css" / "style.css"
+    if css_path.exists():
+        css = css_path.read_text(encoding="utf-8", errors="ignore")
+        if "nav-active" not in css:
+            css_path.write_text(css + NAV_ACTIVE_CSS, encoding="utf-8")
+            fixes.append("Nav active state CSS toegevoegd")
+
+    return fixes
+
+
 def fix_keuze_card_on_light_bg(site_dir: Path) -> list[str]:
     """
     Wanneer een .keuze-grid voorkomt buiten een .keuzeblokken sectie (bijv. in section--tint),
@@ -1052,6 +1099,7 @@ def run_one_pass(site_dir: Path, html_to_repair: list[Path]) -> tuple[int, int]:
         (fix_favicon,                "favicon"),
         (fix_lazy_loading,           "lazy-loading"),
         (fix_footer,                 "footer"),
+        (fix_nav_active_state,       "nav-active"),
         (fix_faq_accordion,          "faq-accordion"),
         (fix_low_contrast,           "low-contrast"),
         (fix_keuze_card_on_light_bg, "keuze-contrast"),

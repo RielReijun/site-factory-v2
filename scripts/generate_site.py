@@ -88,6 +88,16 @@ Regels:
 - Onderste balk: ALTIJD `<div class="footer-bottom">` met copyright en `id="footerYear"`
 - Geen `.footer-inner` wrapper — padding zit op `.site-footer` zelf via CSS
 
+## Conversie — ALTIJD aanwezig op elke pagina
+- **Telefoon in de header**: als de briefing een telefoonnummer bevat, zet het als klikbare link in de `<header>`:
+  `<a href="tel:+31XXXXXXXXX" class="header-phone">📞 06-12345678</a>`
+- **CTA-sectie vóór de footer**: elke pagina (ook subpagina's) moet een `<section class="cta-section">` hebben
+  direct boven `<footer>`. Minimaal: een korte pakkende tekst + primaire knop naar contact.html.
+  Voorbeeld: "Benieuwd wat we voor jou kunnen doen? → Neem contact op"
+- **WhatsApp-knop**: als er een mobiel nummer in de briefing staat, voeg een WhatsApp-link toe in de CTA-sectie:
+  `<a href="https://wa.me/31XXXXXXXXX" class="btn btn-whatsapp">💬 WhatsApp</a>`
+- **Klikbaar telefoonnummer in footer**: altijd `<a href="tel:...">` om het nummer, nooit platte tekst
+
 ## Formulieren
 - Gebruik voor alle contactformulieren: `<form action="https://formspree.io/f/FORMSPREE_ID" method="POST">`
 - Voeg een hidden `<input type="hidden" name="_subject" value="Nieuw bericht via website">` toe
