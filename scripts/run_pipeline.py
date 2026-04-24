@@ -244,10 +244,27 @@ def step_discover_pages(briefing_path: Path, company_name: str, out_path: Path,
         return None
 
 
-def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
+def _write_nextjs_config(project_dir: Path, slug: str, for_deploy: bool = False) -> None:
+    """Schrijf next.config.ts — met basePath voor preview, zonder voor deploy."""
+    base = f"/sites/{slug}" if not for_deploy else ""
+    prefix = f"/sites/{slug}" if not for_deploy else ""
+    config = (
+        'import type { NextConfig } from "next";\n\n'
+        'const nextConfig: NextConfig = {\n'
+        '  output: "export",\n'
+        '  trailingSlash: true,\n'
+        '  images: { unoptimized: true },\n'
+        + (f'  basePath: "{base}",\n  assetPrefix: "{prefix}",\n' if base else '')
+        + '};\n\nexport default nextConfig;\n'
+    )
+    (project_dir / "next.config.ts").write_text(config, encoding="utf-8")
+
+
+def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prospect: str) -> bool:
     """Maak een nieuwe Next.js app aan als die nog niet bestaat."""
     if (project_dir / "package.json").exists():
         log(f"[INFO] scaffold: overgeslagen ({project_dir.name} bestaat al)")
+        _write_nextjs_config(project_dir, slug)  # herschrijf altijd zodat basePath klopt
         return True
     project_dir.parent.mkdir(parents=True, exist_ok=True)
 
@@ -280,18 +297,8 @@ def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -
     if not ok:
         return False
 
-    # next.config.ts: static export
-    config = (
-        'import type { NextConfig } from "next";\n\n'
-        'const nextConfig: NextConfig = {\n'
-        '  output: "export",\n'
-        '  trailingSlash: true,\n'
-        '  images: { unoptimized: true },\n'
-        '};\n\n'
-        'export default nextConfig;\n'
-    )
-    (project_dir / "next.config.ts").write_text(config, encoding="utf-8")
-    log("[OK]  next.config.ts geschreven (output: export)")
+    _write_nextjs_config(project_dir, slug)
+    log(f"[OK]  next.config.ts geschreven (basePath: /sites/{slug})")
 
     def _run_in_project(cmd: list[str], label: str) -> bool:
         log(f"[INFO] {label}...")
@@ -917,7 +924,7 @@ def main():
 
         # ── Stap 0: scaffold ─────────────────────────────────────────────────
         n += 1
-        if not step_scaffold_nextjs(project_dir, n, total, company_name):
+        if not step_scaffold_nextjs(project_dir, slug, n, total, company_name):
             write_status(running=False, prospect=company_name, step="scaffold", result="failed")
             sys.exit(1)
 
