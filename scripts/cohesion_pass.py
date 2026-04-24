@@ -151,11 +151,136 @@ def run(site_dir: Path, max_subpage_chars: int = 2500, css_tail_chars: int = 600
     return lines
 
 
+SPOT_CHECK_PROMPT = """Je bekijkt een screenshot van een subpagina van een gegenereerde website.
+Kijk uitsluitend op deze drie problemen en geef elk gevonden probleem als korte, specifieke zin:
+
+1. Witte of lichte tekst op witte of lichte achtergrond (onleesbaar)
+2. Elementen die buiten beeld vallen of over elkaar heen staan (gebroken layout)
+3. Grote lege vlakken zonder inhoud (sectie die duidelijk content mist)
+
+NEGEER volledig: de demo-popup of badge rechtsonder in beeld.
+
+Geef ALLEEN JSON: {"issues": ["..."]}, of {"issues": []} als er niets is."""
+
+
+def spot_check(site_dir: Path) -> int:
+    """
+    Screenshot één willekeurige subpagina na de cohesion pass en check
+    op contrast, layout-breaks en lege secties.
+    Injecteert CSS-fix als er issues zijn.
+    Geeft aantal gevonden issues terug.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    model   = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    if not api_key:
+        return 0
+
+    # Kies een willekeurige subpagina (niet index, niet legal)
+    skip    = {"index.html", "legal.html", "sitemap.html"}
+    pages   = [f for f in sorted(site_dir.glob("*.html"))
+               if not f.name.startswith("_") and f.name not in skip]
+    if not pages:
+        return 0
+
+    import random, base64, http.server, threading, time, json as _json, subprocess
+    target = random.choice(pages)
+
+    # Start lokale server
+    port = 9877  # Afwijkend van screenshot_validate (9876) om conflicten te voorkomen
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, directory=str(site_dir), **kw)
+        def log_message(self, *a): pass
+
+    server = http.server.HTTPServer(("127.0.0.1", port), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    time.sleep(0.3)
+
+    shot_path = site_dir / "_screenshots" / f"_spot_{target.stem}.png"
+    shot_path.parent.mkdir(exist_ok=True)
+
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page    = browser.new_page()
+            page.set_viewport_size({"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/{target.name}", timeout=15000,
+                      wait_until="domcontentloaded")
+            page.wait_for_timeout(600)
+            page.screenshot(path=str(shot_path), full_page=False)
+            page.close()
+            browser.close()
+    except Exception as e:
+        print(f"[WARN] spot_check screenshot mislukt: {e}")
+        server.shutdown()
+        return 0
+    finally:
+        server.shutdown()
+
+    # Analyseer met Claude Vision
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
+    img_b64 = base64.standard_b64encode(shot_path.read_bytes()).decode()
+
+    try:
+        resp = client.messages.create(
+            model=model, max_tokens=300,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64",
+                 "media_type": "image/png", "data": img_b64}},
+                {"type": "text", "text": SPOT_CHECK_PROMPT},
+            ]}],
+        )
+        raw    = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
+        raw    = re.sub(r'^```\w*\s*|\s*```$', '', raw, flags=re.MULTILINE)
+        issues = _json.loads(raw.strip()).get("issues", [])
+    except Exception as e:
+        print(f"[WARN] spot_check analyse mislukt: {e}")
+        return 0
+
+    usage   = getattr(resp, "usage", None)
+    in_tok  = getattr(usage, "input_tokens",  0) or 0
+    out_tok = getattr(usage, "output_tokens", 0) or 0
+    print(f"[INFO] spot_check {target.name}: {in_tok}in/{out_tok}out tokens")
+
+    if not issues:
+        print(f"[OK]  spot_check {target.name}: geen visuele problemen")
+        return 0
+
+    print(f"[WARN] spot_check {target.name}: {len(issues)} issue(s)")
+    for i in issues:
+        print(f"       - {i}")
+
+    # Schrijf tijdelijke screenshot_validation.json en roep screenshot-repair aan
+    tmp_json = site_dir / "_spot_check_issues.json"
+    tmp_json.write_text(
+        _json.dumps({"results": [{"page": target.name, "issues": issues}],
+                     "total_issues": len(issues)}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    try:
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "repair_generated_site.py"),
+             "--site-dir", str(site_dir), "--screenshot-json", str(tmp_json), "--passes", "0"],
+            capture_output=True, text=True, cwd=str(Path(__file__).parent),
+        )
+        print(r.stdout.strip())
+    except Exception as e:
+        print(f"[WARN] spot_check repair mislukt: {e}")
+    finally:
+        tmp_json.unlink(missing_ok=True)
+
+    return len(issues)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="AI-powered cohesiecheck — maakt subpagina's consistent met de homepage"
     )
     parser.add_argument("--site-dir", required=True, help="Pad naar de gegenereerde site-map")
+    parser.add_argument("--skip-spot-check", action="store_true",
+                        help="Sla de post-cohesion spot check over")
     args = parser.parse_args()
 
     site_dir = Path(args.site_dir)
@@ -164,6 +289,11 @@ def main():
         sys.exit(1)
 
     fixes = run(site_dir)
+
+    if not args.skip_spot_check:
+        print("\n[INFO] cohesion_pass: spot check op willekeurige subpagina...")
+        spot_check(site_dir)
+
     sys.exit(0)
 
 

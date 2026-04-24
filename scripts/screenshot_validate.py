@@ -55,15 +55,16 @@ def start_server(site_dir: Path, port: int) -> http.server.HTTPServer:
     return server
 
 
-def take_screenshot(page, url: str, out_path: Path) -> bool:
-    """Maak een screenshot van een URL. Geeft True terug als geslaagd."""
+def take_screenshot(page, url: str, out_path: Path, viewport_width: int = 1280) -> bool:
+    """Maak een screenshot van een URL op het opgegeven viewport-breedte."""
     try:
+        page.set_viewport_size({"width": viewport_width, "height": 800})
         page.goto(url, timeout=15000, wait_until="domcontentloaded")
-        page.wait_for_timeout(800)  # wacht op CSS-animaties
+        page.wait_for_timeout(800)
         page.screenshot(path=str(out_path), full_page=False)
         return True
     except Exception as e:
-        print(f"[WARN] Screenshot mislukt voor {url}: {e}")
+        print(f"[WARN] Screenshot mislukt voor {url} (@{viewport_width}px): {e}")
         return False
 
 
@@ -124,16 +125,25 @@ def main():
         print("[WARN] ANTHROPIC_API_KEY ontbreekt — screenshot-validatie overgeslagen")
         sys.exit(0)
 
-    # Bepaal pagina's om te screenshotten:
-    # - index.html altijd als eerste (de homepage is de visuele referentie)
-    # - daarna willekeurig uit de rest (subpagina's kunnen afwijkende styling hebben)
+    # Pagina-strategie:
+    # - index.html altijd op BEIDE viewports (375px mobiel + 1280px desktop)
+    # - daarna willekeurige subpagina's op 1280px tot max_pages bereikt is
+    # Voorbeeld bij max_pages=4: index@375, index@1280, subpage1@1280, subpage2@1280
     import random
     html_files = [f for f in sorted(site_dir.glob("*.html")) if not f.name.startswith("_")]
     index      = site_dir / "index.html"
-    rest       = [f for f in html_files if f != index]
+    rest       = [f for f in html_files if f != index and f.name not in ("legal.html",)]
     random.shuffle(rest)
-    pages      = ([index] if index.exists() else []) + rest
-    pages      = pages[:args.max_pages]
+
+    # Bouw een lijst van (html_path, viewport_width, label) tuples
+    shots: list[tuple] = []
+    if index.exists():
+        shots.append((index, 375,  "index@mobile"))
+        shots.append((index, 1280, "index@desktop"))
+    for subpage in rest:
+        if len(shots) >= args.max_pages:
+            break
+        shots.append((subpage, 1280, f"{subpage.name}@desktop"))
 
     if not pages:
         print("[WARN] Geen HTML-pagina's gevonden")
@@ -159,34 +169,35 @@ def main():
             browser = pw.chromium.launch(
                 args=["--no-sandbox", "--disable-dev-shm-usage"],
             )
-            ctx  = browser.new_context(viewport={"width": 1280, "height": 800})
-            page = ctx.new_page()
+            page = browser.new_page()
 
-            for html_path in pages:
+            for html_path, viewport_w, label in shots:
                 url       = f"http://127.0.0.1:{args.port}/{html_path.name}"
-                shot_path = tmp_dir / f"{html_path.stem}.png"
+                shot_path = tmp_dir / f"{html_path.stem}_{viewport_w}.png"
 
-                print(f"[INFO] Screenshot: {html_path.name}")
-                ok = take_screenshot(page, url, shot_path)
+                print(f"[INFO] Screenshot: {label}")
+                ok = take_screenshot(page, url, shot_path, viewport_width=viewport_w)
                 if not ok:
                     continue
 
                 issues = analyze_screenshot(shot_path, client, model)
                 result = {
-                    "page":       html_path.name,
+                    "page":      html_path.name,
+                    "viewport":  viewport_w,
+                    "label":     label,
                     "screenshot": str(shot_path.relative_to(site_dir)),
-                    "issues":     issues,
+                    "issues":    issues,
                 }
                 all_results.append(result)
 
                 if issues:
-                    print(f"[WARN] {html_path.name}: {len(issues)} visueel probleem/problemen")
+                    print(f"[WARN] {label}: {len(issues)} visueel probleem/problemen")
                     for issue in issues:
                         print(f"       - {issue}")
                 else:
-                    print(f"[OK]  {html_path.name}: geen visuele problemen")
+                    print(f"[OK]  {label}: geen visuele problemen")
 
-            ctx.close()
+            page.close()
             browser.close()
 
     except ImportError:

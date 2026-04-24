@@ -21,6 +21,8 @@ Site-brede fixes (draaien eenmalig):
 15. FAQ accordion fixen                      (details/summary + div/button class-mismatch)
 16. Laag contrast tekst fixen               (rgba wit/zwart met te lage alpha)
 17. Keuze-card contrast op lichte achtergrond (keuze-grid buiten keuzeblokken)
+18. Card contrast fixen                      (lichte achtergrond binnen donkere sectie)
+19. CSS coverage check                       (classes in HTML zonder CSS-regel → WARN)
 """
 import argparse
 import json
@@ -1070,6 +1072,129 @@ def fix_lazy_loading(site_dir: Path) -> list[str]:
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
+CARD_CONTRAST_CSS = """
+/* card-contrast-fix: kaarten met lichte achtergrond krijgen altijd donkere tekst,
+   ongeacht de achtergrondkleur van de parent-sectie */
+{selectors} {{
+  color: var(--color-text, #1a1a1a);
+}}
+{selectors_children} {{
+  color: inherit;
+}}
+"""
+
+# Klassen die lichte achtergronden hebben maar typisch state/utility zijn — skip
+_SKIP_CONTRAST_CLASSES = {
+    "modal", "tooltip", "dropdown", "popup", "overlay",
+    "badge", "tag", "chip", "alert", "notification", "toast",
+}
+
+def fix_card_contrast(site_dir: Path) -> list[str]:
+    """
+    Detecteer CSS-klassen met lichte achtergrond (white / rgba(255,255,255,...) /
+    lichte CSS-variabelen) en voeg expliciet color: var(--color-text) toe zodat
+    tekst leesbaar blijft ook als de parent-sectie donker is.
+    """
+    css_path = site_dir / "assets" / "css" / "style.css"
+    if not css_path.exists():
+        return []
+    css = css_path.read_text(encoding="utf-8", errors="ignore")
+    if "card-contrast-fix" in css:
+        return []
+
+    light_bg_re = re.compile(
+        r'(\.[\w-]+)\s*\{([^}]*background(?:-color)?:\s*'
+        r'(?:#fff\b|#ffffff\b|white\b|rgba\(\s*255\s*,\s*255\s*,\s*255'
+        r'|var\(--color-(?:white|light|cream|parchment|bg\b|surface\b|card\b))'
+        r'[^}]*)\}',
+        re.IGNORECASE,
+    )
+
+    light_classes = []
+    for m in light_bg_re.finditer(css):
+        cls      = m.group(1).lstrip(".")
+        rule_body = m.group(2)
+        # Sla over als de klasse al een expliciete color: heeft
+        if re.search(r'\bcolor\s*:', rule_body):
+            continue
+        if any(skip in cls for skip in _SKIP_CONTRAST_CLASSES):
+            continue
+        light_classes.append(m.group(1))  # inclusief punt
+
+    if not light_classes:
+        return []
+
+    selectors          = ",\n".join(light_classes)
+    children_selectors = ",\n".join(
+        f"{s} p, {s} h1, {s} h2, {s} h3, {s} h4, {s} h5, {s} li, {s} span, {s} a"
+        for s in light_classes
+    )
+    injection = CARD_CONTRAST_CSS.format(
+        selectors=selectors,
+        selectors_children=children_selectors,
+    )
+    css_path.write_text(css + injection, encoding="utf-8")
+    return [f"Card contrast fix: {len(light_classes)} klassen met lichte achtergrond"]
+
+
+# Skip-lijst voor CSS coverage check — state, utility en BEM-modifier classes
+_COVERAGE_SKIP = {
+    "active", "inactive", "is-open", "is-active", "is-scrolled", "is-hidden",
+    "is-visible", "is-loading", "open", "closed", "hidden", "visible",
+    "disabled", "selected", "checked", "loading", "loaded", "error",
+    "container", "wrapper", "inner", "outer", "row", "col", "grid",
+    "sr-only", "clearfix", "js", "no-js", "lazyload", "lazyloaded",
+    "site-factory-demo-banner",
+}
+
+
+def check_css_coverage(site_dir: Path) -> list[str]:
+    """
+    Verzamel alle class names uit de HTML en check welke geen CSS-regel hebben.
+    Rapporteert als WARN zodat de pipeline niet blokkeert maar problemen
+    wel zichtbaar zijn in de log.
+    """
+    css_path = site_dir / "assets" / "css" / "style.css"
+    if not css_path.exists():
+        return []
+    css = css_path.read_text(encoding="utf-8", errors="ignore")
+
+    all_classes: set[str] = set()
+    for html_path in site_dir.glob("*.html"):
+        if html_path.name.startswith("_"):
+            continue
+        content = html_path.read_text(encoding="utf-8", errors="ignore")
+        for m in re.finditer(r'class="([^"]+)"', content):
+            for cls in m.group(1).split():
+                all_classes.add(cls)
+
+    missing = []
+    for cls in sorted(all_classes):
+        # Skip utility/state classes
+        if cls in _COVERAGE_SKIP:
+            continue
+        # Skip BEM-modifiers (--variant) en enkelvoudige letters
+        if "--" in cls or len(cls) < 3:
+            continue
+        # Skip klassen die beginnen met js- of data-
+        if cls.startswith(("js-", "data-", "wp-")):
+            continue
+        if f".{cls}" not in css and f".{cls} " not in css and f".{cls}{{" not in css:
+            missing.append(cls)
+
+    if not missing:
+        return []
+
+    # Max 15 meldingen om de log leesbaar te houden
+    warnings = [f"[WARN] CSS ontbreekt voor class: .{cls}" for cls in missing[:15]]
+    if len(missing) > 15:
+        warnings.append(f"[WARN] ... en {len(missing) - 15} andere classes zonder CSS-regel")
+    for w in warnings:
+        print(w)
+    # Geen fixes toegepast — alleen rapporteren
+    return []
+
+
 def run_one_pass(site_dir: Path, html_to_repair: list[Path]) -> tuple[int, int]:
     """Voer één volledige reparatieronde uit. Geeft (file_fixes, site_fixes) terug."""
     total_file_fixes = 0
@@ -1103,6 +1228,8 @@ def run_one_pass(site_dir: Path, html_to_repair: list[Path]) -> tuple[int, int]:
         (fix_faq_accordion,          "faq-accordion"),
         (fix_low_contrast,           "low-contrast"),
         (fix_keuze_card_on_light_bg, "keuze-contrast"),
+        (fix_card_contrast,          "card-contrast"),
+        (check_css_coverage,         "css-coverage"),
     ]:
         result = fn(site_dir)
         site_wide_fixes.extend(result)

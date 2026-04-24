@@ -65,6 +65,8 @@ Gebruik onderstaande briefing om statische websitebestanden te genereren voor {c
 - Gebruik dezelfde visuele richting op alle pagina's
 - Gebruik GEEN em-dashes (—) in lopende tekst, gebruik een komma, punt of nieuwe zin als dat natuurlijker klinkt
 - Zorg altijd voor voldoende contrast: witte tekst op donkere achtergrond minimaal `rgba(255,255,255,0.9)`, nooit lager dan 0.85. Donkere tekst op lichte achtergrond: gebruik `var(--color-text)` of `#1a1a1a`, nooit een muted kleur op een al lichte achtergrond.
+- **Kaarten binnen donkere secties**: als een kaart of component een lichte achtergrond heeft (`background: white`, `rgba(255,255,255,...)` of een lichte CSS-variabele), schrijf dan ALTIJD expliciet `color: var(--color-text, #1a1a1a)` op die kaart zelf — nooit vertrouwen op overerving van de parent-sectie.
+- **CSS coverage**: schrijf voor elke class name die je in de HTML gebruikt ook daadwerkelijk een CSS-regel. Laat geen klassen ongestijld.
 
 ## Footer — ALTIJD deze vaste structuur
 ```html
