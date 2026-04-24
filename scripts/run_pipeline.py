@@ -314,42 +314,131 @@ def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -
         "npm packages installeren (lucide + tailwind plugins)",
     )
 
-    # shadcn/ui — gebruik canary voor Tailwind v4 ondersteuning (Next.js 16)
-    shadcn_ok = _run_in_project(
-        ["npx", "--yes", "shadcn@canary", "init", "-y", "--base-color", "slate"],
-        "shadcn/ui initialiseren (canary voor Tailwind v4)",
-    )
-    if shadcn_ok:
-        _run_in_project(
-            ["npx", "--yes", "shadcn@canary", "add", "-y",
-             "accordion", "button", "card", "sheet", "badge", "separator"],
-            "shadcn componenten toevoegen",
-        )
-    else:
-        # Fallback: maak de ui-map aan met een simpele Button als fallback
-        ui_dir = project_dir / "src" / "components" / "ui"
-        ui_dir.mkdir(parents=True, exist_ok=True)
-        (ui_dir / "button.tsx").write_text(
-            '"use client";\n'
-            'import { cn } from "@/lib/utils";\n'
-            'export function Button({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { className?: string }) {\n'
-            '  return <button className={cn("inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors", className)} {...props}>{children}</button>;\n'
-            '}\n',
-            encoding="utf-8",
-        )
-        # lib/utils.ts voor cn()
-        lib_dir = project_dir / "src" / "lib"
-        lib_dir.mkdir(parents=True, exist_ok=True)
-        (lib_dir / "utils.ts").write_text(
-            'import { type ClassValue, clsx } from "clsx";\nimport { twMerge } from "tailwind-merge";\n'
-            'export function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }\n',
-            encoding="utf-8",
-        )
-        _run_in_project(["npm", "install", "clsx", "tailwind-merge"], "clsx + tailwind-merge (cn util)")
-        log("[INFO] shadcn fallback: minimale ui/button.tsx aangemaakt")
+    # shadcn-stijl componenten direct aanmaken (geen init nodig)
+    _run_in_project(["npm", "install", "clsx", "tailwind-merge", "class-variance-authority", "@radix-ui/react-accordion", "@radix-ui/react-separator", "@radix-ui/react-slot"], "Radix UI + utilities")
+    _create_ui_components(project_dir)
 
-    log("[OK]  scaffold compleet: Next.js + Tailwind + Lucide + shadcn/ui")
+    log("[OK]  scaffold compleet: Next.js + Tailwind + Lucide + shadcn-stijl components")
     return True
+
+
+def _create_ui_components(project_dir: Path) -> None:
+    """Schrijf essentiële shadcn-compatibele UI-componenten direct naar src/components/ui/."""
+    lib_dir = project_dir / "src" / "lib"
+    ui_dir  = project_dir / "src" / "components" / "ui"
+    lib_dir.mkdir(parents=True, exist_ok=True)
+    ui_dir.mkdir(parents=True, exist_ok=True)
+
+    (lib_dir / "utils.ts").write_text(
+        'import { type ClassValue, clsx } from "clsx";\n'
+        'import { twMerge } from "tailwind-merge";\n'
+        'export function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }\n',
+        encoding="utf-8",
+    )
+
+    (ui_dir / "button.tsx").write_text(
+        '"use client";\n'
+        'import * as React from "react";\n'
+        'import { Slot } from "@radix-ui/react-slot";\n'
+        'import { cva, type VariantProps } from "class-variance-authority";\n'
+        'import { cn } from "@/lib/utils";\n\n'
+        'const buttonVariants = cva(\n'
+        '  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50",\n'
+        '  { variants: { variant: {\n'
+        '      default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",\n'
+        '      outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",\n'
+        '      ghost: "hover:bg-accent hover:text-accent-foreground",\n'
+        '      link: "text-primary underline-offset-4 hover:underline",\n'
+        '    }, size: { default: "h-9 px-4 py-2", sm: "h-8 rounded-md px-3 text-xs", lg: "h-10 rounded-md px-8", icon: "h-9 w-9" },\n'
+        '  }, defaultVariants: { variant: "default", size: "default" } }\n'
+        ');\n\n'
+        'export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> { asChild?: boolean; }\n'
+        'const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ className, variant, size, asChild = false, ...props }, ref) => {\n'
+        '  const Comp = asChild ? Slot : "button";\n'
+        '  return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;\n'
+        '});\n'
+        'Button.displayName = "Button";\n'
+        'export { Button, buttonVariants };\n',
+        encoding="utf-8",
+    )
+
+    (ui_dir / "card.tsx").write_text(
+        'import * as React from "react";\nimport { cn } from "@/lib/utils";\n\n'
+        'const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (\n'
+        '  <div ref={ref} className={cn("rounded-xl border bg-card text-card-foreground shadow", className)} {...props} />\n));\n'
+        'Card.displayName = "Card";\n\n'
+        'const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (\n'
+        '  <div ref={ref} className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />\n));\n'
+        'CardHeader.displayName = "CardHeader";\n\n'
+        'const CardTitle = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (\n'
+        '  <div ref={ref} className={cn("font-semibold leading-none tracking-tight", className)} {...props} />\n));\n'
+        'CardTitle.displayName = "CardTitle";\n\n'
+        'const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (\n'
+        '  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />\n));\n'
+        'CardContent.displayName = "CardContent";\n\n'
+        'export { Card, CardHeader, CardTitle, CardContent };\n',
+        encoding="utf-8",
+    )
+
+    (ui_dir / "badge.tsx").write_text(
+        'import * as React from "react";\nimport { cva, type VariantProps } from "class-variance-authority";\nimport { cn } from "@/lib/utils";\n\n'
+        'const badgeVariants = cva("inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors",\n'
+        '  { variants: { variant: {\n'
+        '    default: "border-transparent bg-primary text-primary-foreground shadow hover:bg-primary/80",\n'
+        '    secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",\n'
+        '    outline: "text-foreground",\n'
+        '  }}, defaultVariants: { variant: "default" }}\n'
+        ');\n\n'
+        'export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}\n'
+        'function Badge({ className, variant, ...props }: BadgeProps) {\n'
+        '  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;\n'
+        '}\nexport { Badge, badgeVariants };\n',
+        encoding="utf-8",
+    )
+
+    (ui_dir / "accordion.tsx").write_text(
+        '"use client";\n'
+        'import * as React from "react";\n'
+        'import * as AccordionPrimitive from "@radix-ui/react-accordion";\n'
+        'import { ChevronDown } from "lucide-react";\n'
+        'import { cn } from "@/lib/utils";\n\n'
+        'const Accordion = AccordionPrimitive.Root;\n\n'
+        'const AccordionItem = React.forwardRef<React.ElementRef<typeof AccordionPrimitive.Item>, React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Item>>(({ className, ...props }, ref) => (\n'
+        '  <AccordionPrimitive.Item ref={ref} className={cn("border-b", className)} {...props} />\n));\n'
+        'AccordionItem.displayName = "AccordionItem";\n\n'
+        'const AccordionTrigger = React.forwardRef<React.ElementRef<typeof AccordionPrimitive.Trigger>, React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Trigger>>(({ className, children, ...props }, ref) => (\n'
+        '  <AccordionPrimitive.Header className="flex">\n'
+        '    <AccordionPrimitive.Trigger ref={ref} className={cn("flex flex-1 items-center justify-between py-4 text-sm font-medium transition-all hover:underline [&[data-state=open]>svg]:rotate-180", className)} {...props}>\n'
+        '      {children}\n'
+        '      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />\n'
+        '    </AccordionPrimitive.Trigger>\n'
+        '  </AccordionPrimitive.Header>\n));\n'
+        'AccordionTrigger.displayName = AccordionPrimitive.Trigger.displayName;\n\n'
+        'const AccordionContent = React.forwardRef<React.ElementRef<typeof AccordionPrimitive.Content>, React.ComponentPropsWithoutRef<typeof AccordionPrimitive.Content>>(({ className, children, ...props }, ref) => (\n'
+        '  <AccordionPrimitive.Content ref={ref} className="overflow-hidden text-sm data-[state=closed]:animate-accordion-close data-[state=open]:animate-accordion-open" {...props}>\n'
+        '    <div className={cn("pb-4 pt-0", className)}>{children}</div>\n'
+        '  </AccordionPrimitive.Content>\n));\n'
+        'AccordionContent.displayName = AccordionPrimitive.Content.displayName;\n\n'
+        'export { Accordion, AccordionItem, AccordionTrigger, AccordionContent };\n',
+        encoding="utf-8",
+    )
+
+    (ui_dir / "separator.tsx").write_text(
+        '"use client";\n'
+        'import * as React from "react";\n'
+        'import * as SeparatorPrimitive from "@radix-ui/react-separator";\n'
+        'import { cn } from "@/lib/utils";\n\n'
+        'const Separator = React.forwardRef<React.ElementRef<typeof SeparatorPrimitive.Root>, React.ComponentPropsWithoutRef<typeof SeparatorPrimitive.Root>>(\n'
+        '  ({ className, orientation = "horizontal", decorative = true, ...props }, ref) => (\n'
+        '    <SeparatorPrimitive.Root ref={ref} decorative={decorative} orientation={orientation}\n'
+        '      className={cn("shrink-0 bg-border", orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]", className)} {...props} />\n'
+        '  )\n);\n'
+        'Separator.displayName = SeparatorPrimitive.Root.displayName;\n'
+        'export { Separator };\n',
+        encoding="utf-8",
+    )
+
+    log(f"[OK]  UI componenten aangemaakt: button, card, badge, accordion, separator")
 
 
 def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
