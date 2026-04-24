@@ -145,7 +145,7 @@ def main():
             break
         shots.append((subpage, 1280, f"{subpage.name}@desktop"))
 
-    if not pages:
+    if not shots:
         print("[WARN] Geen HTML-pagina's gevonden")
         sys.exit(0)
 

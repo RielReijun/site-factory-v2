@@ -250,13 +250,33 @@ def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -
         log(f"[INFO] scaffold: overgeslagen ({project_dir.name} bestaat al)")
         return True
     project_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    log(f"\n{'─' * 60}")
+    log(f"[STAP {n}/{total}] scaffold_nextjs")
+    log(f"{'─' * 60}")
+    write_status(running=True, prospect=prospect, step="scaffold_nextjs", step_n=n, total=total)
+
+    t0 = time.monotonic()
     cmd = [
         "npx", "--yes", "create-next-app@latest", project_dir.name,
         "--typescript", "--tailwind", "--app", "--no-git",
         "--src-dir", "--import-alias", "@/*",
         "--no-eslint",
     ]
-    ok = run_cmd(cmd, "scaffold_nextjs", n, total, prospect)
+    process = subprocess.Popen(
+        cmd, cwd=str(project_dir.parent),  # aanmaken in OUTPUT_DIR
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+    for line in iter(process.stdout.readline, ""):
+        log(line.rstrip("\n"))
+    process.wait()
+    duration = time.monotonic() - t0
+    ok = process.returncode == 0
+    _step_timings.append({"step": "scaffold_nextjs", "duration_s": round(duration, 1), "ok": ok})
+    if not ok:
+        log(f"[FAIL] scaffold_nextjs mislukt (exit {process.returncode})")
+    log(f"[INFO] Duur: {_fmt_duration(duration)}")
     if ok:
         # Schrijf next.config.ts met static export
         config = (
