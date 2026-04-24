@@ -22,12 +22,19 @@ Je krijgt de HTML van alle pagina's en de huidige CSS. Jouw taak:
 
 1. Vergelijk de subpagina's met de homepage — zoek CSS-klassen die op subpagina's voorkomen maar niet of slecht gestijld zijn
 2. Schrijf gerichte CSS-overrides die subpagina's consistent maken met de homepage
-3. Let specifiek op: page-hero's, kaart-secties, CTA-secties, typografie, spacing, kleuren
+3. Let specifiek op:
+   - **Responsive layout**: flex/grid containers die op desktop gestapeld blijven terwijl ze naast elkaar zouden moeten zijn (ontbrekende @media breakpoints)
+   - **page-hero's**: subpagina page-heroes die te hoog, leeg of ongestijld zijn
+   - **Kaartgrids**: kaarten die overflow hebben of buiten beeld vallen
+   - **CTA-secties**: inconsistente achtergrondkleur, padding of knopstijl
+   - **Typografie**: h1/h2/h3 die niet de homepage-stijl volgen
+   - **Spacing**: secties met te veel of te weinig padding
 
 Regels:
 - Schrijf ALLEEN CSS — geen HTML, geen uitleg, geen code fences
-- Maximaal 80 regels CSS
+- Maximaal 100 regels CSS
 - Gebruik specifieke selectors die alleen het probleem oplossen
+- Voeg altijd `@media (min-width: 768px)` breakpoints toe waar een tweekoloms-layout ontbreekt
 - Raak NIET de bestaande goed werkende stijlen aan
 - Als je geen problemen ziet: stuur precies `/* geen aanpassingen nodig */`
 
