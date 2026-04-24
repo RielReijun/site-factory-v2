@@ -244,10 +244,65 @@ def step_discover_pages(briefing_path: Path, company_name: str, out_path: Path,
         return None
 
 
+def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
+    """Maak een nieuwe Next.js app aan als die nog niet bestaat."""
+    if (project_dir / "package.json").exists():
+        log(f"[INFO] scaffold: overgeslagen ({project_dir.name} bestaat al)")
+        return True
+    project_dir.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "npx", "--yes", "create-next-app@latest", project_dir.name,
+        "--typescript", "--tailwind", "--app", "--no-git",
+        "--src-dir", "--import-alias", "@/*",
+        "--no-eslint",
+    ]
+    ok = run_cmd(cmd, "scaffold_nextjs", n, total, prospect)
+    if ok:
+        # Schrijf next.config.ts met static export
+        config = (
+            'import type { NextConfig } from "next";\n\n'
+            'const nextConfig: NextConfig = {\n'
+            '  output: "export",\n'
+            '  trailingSlash: true,\n'
+            '  images: { unoptimized: true },\n'
+            '};\n\n'
+            'export default nextConfig;\n'
+        )
+        (project_dir / "next.config.ts").write_text(config, encoding="utf-8")
+        log("[OK]  next.config.ts geschreven (output: export)")
+    return ok
+
+
+def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
+    """Run npm run build in de Next.js projectdirectory."""
+    cmd = ["npm", "run", "build"]
+    # run_cmd draait vanuit SCRIPTS_DIR — we willen project_dir
+    log(f"\n{'─' * 60}")
+    log(f"[STAP {n}/{total}] build_nextjs")
+    log(f"{'─' * 60}")
+    write_status(running=True, prospect=prospect, step="build_nextjs", step_n=n, total=total)
+    t0 = time.monotonic()
+    process = subprocess.Popen(
+        cmd, cwd=str(project_dir),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+    for line in iter(process.stdout.readline, ""):
+        log(line.rstrip("\n"))
+    process.wait()
+    duration = time.monotonic() - t0
+    ok = process.returncode == 0
+    _step_timings.append({"step": "build_nextjs", "duration_s": round(duration, 1), "ok": ok})
+    if not ok:
+        log(f"[FAIL] build_nextjs mislukt (exit {process.returncode})")
+    log(f"[INFO] Duur: {_fmt_duration(duration)}")
+    return ok
+
+
 def step_generate_unit(briefing_path: Path, company_name: str, unit_key: str,
-                        out_path: Path, ref_html: Path | None, ref_css: Path | None,
+                        out_path: Path, ref_tsx: Path | None,
                         n: int, total: int,
-                        page_file: str = "", page_title: str = "", page_desc: str = "",
+                        page_slug: str = "", page_title: str = "", page_desc: str = "",
                         image_manifest: Path | None = None,
                         nav_pages: list[str] | None = None) -> bool:
     cmd = [
@@ -257,12 +312,10 @@ def step_generate_unit(briefing_path: Path, company_name: str, unit_key: str,
         "--unit",    unit_key,
         "--out",     str(out_path),
     ]
-    if ref_html and ref_html.exists():
-        cmd += ["--ref-html", str(ref_html)]
-    if ref_css and ref_css.exists():
-        cmd += ["--ref-css", str(ref_css)]
-    if page_file:
-        cmd += ["--page-file",  page_file]
+    if ref_tsx and ref_tsx.exists():
+        cmd += ["--ref-tsx", str(ref_tsx)]
+    if page_slug:
+        cmd += ["--page-slug",  page_slug]
     if page_title:
         cmd += ["--page-title", page_title]
     if page_desc:
@@ -272,7 +325,7 @@ def step_generate_unit(briefing_path: Path, company_name: str, unit_key: str,
     if nav_pages:
         cmd += ["--nav-pages", json.dumps(nav_pages)]
 
-    label = f"generate:{page_file or unit_key}"
+    label = f"generate:{page_slug or unit_key}"
     return run_cmd(cmd, label, n, total, company_name)
 
 
@@ -288,13 +341,13 @@ def step_parse_unit(input_path: Path, out_dir: Path, n: int, total: int, prospec
 
 def _run_unit_buffered(
     briefing_path: Path, company_name: str, unit_key: str,
-    out_path: Path, ref_html: Path | None, ref_css: Path | None,
-    page_file: str, page_title: str, page_desc: str,
+    out_path: Path, ref_tsx: Path | None,
+    page_slug: str, page_title: str, page_desc: str,
     image_manifest: Path | None, nav_pages: list[str] | None,
-    site_dir: Path,
+    project_dir: Path,
 ) -> tuple[bool, str, list[str]]:
-    """Genereer + parse één unit in een thread. Buffers output, returnt (ok, label, lines)."""
-    label = page_file or unit_key
+    """Genereer + parse één unit in een thread. Returnt (ok, label, lines)."""
+    label = page_slug or unit_key
     lines = [f"\n{'─' * 60}", f"[UNIT] {label}", f"{'─' * 60}"]
 
     gen_cmd = [
@@ -304,12 +357,10 @@ def _run_unit_buffered(
         "--unit",    unit_key,
         "--out",     str(out_path),
     ]
-    if ref_html and ref_html.exists():
-        gen_cmd += ["--ref-html", str(ref_html)]
-    if ref_css and ref_css.exists():
-        gen_cmd += ["--ref-css", str(ref_css)]
-    if page_file:
-        gen_cmd += ["--page-file", page_file, "--page-title", page_title, "--page-desc", page_desc]
+    if ref_tsx and ref_tsx.exists():
+        gen_cmd += ["--ref-tsx", str(ref_tsx)]
+    if page_slug:
+        gen_cmd += ["--page-slug", page_slug, "--page-title", page_title, "--page-desc", page_desc]
     if image_manifest and image_manifest.exists():
         gen_cmd += ["--image-manifest", str(image_manifest)]
     if nav_pages:
@@ -324,16 +375,16 @@ def _run_unit_buffered(
         if proc.returncode == 0:
             break
         if attempt <= MAX_RETRIES:
-            lines.append(f"[WARN] generate:{label} mislukt (poging {attempt}/{MAX_RETRIES + 1}) — herprobeert na 10s")
+            lines.append(f"[WARN] generate:{label} mislukt (poging {attempt}) — herprobeert na 10s")
             time.sleep(10)
         else:
-            lines.append(f"[FAIL] generate:{label} mislukt na {MAX_RETRIES + 1} pogingen (exit {proc.returncode})")
+            lines.append(f"[FAIL] generate:{label} mislukt na {MAX_RETRIES + 1} pogingen")
             return False, label, lines
 
     parse_cmd = [
         "python", str(SCRIPTS_DIR / "parse_generated_site.py"),
         "--input",  str(out_path),
-        "--outdir", str(site_dir),
+        "--outdir", str(project_dir),
         "--force",
     ]
     proc2 = subprocess.run(parse_cmd, cwd=str(SCRIPTS_DIR), capture_output=True, text=True)
@@ -458,19 +509,20 @@ def copy_images_to_site(collected_path: Path, site_dir: Path) -> None:
 def build_units(pages: list[dict]) -> list[tuple]:
     """
     Geeft een lijst van tuples:
-      (unit_key, file_stem, page_file, page_title, page_desc)
+      (unit_key, file_stem, page_slug, page_title, page_desc)
 
-    Volgorde: home_html → alle page-units → styles → scripts
-    Styles komt na alle HTML zodat alle class names beschikbaar zijn als CSS-referentie.
+    Next.js volgorde: layout (header/footer/globals) → home → subpagina's
     """
-    units = [("home_html", "home-html", "", "", "")]
-
+    units = [
+        ("layout", "layout", "", "", ""),
+        ("home",   "home",   "", "", ""),
+    ]
     for page in pages:
-        stem = page["file"].replace(".html", "").replace("/", "-")
-        units.append(("page", stem, page["file"], page.get("title", ""), page.get("description", "")))
-
-    units.append(("styles",  "styles",  "", "", ""))
-    units.append(("scripts", "scripts", "", "", ""))
+        # page["file"] = "over-ons.html" → slug = "over-ons"
+        slug = page["file"].replace(".html", "").replace("/", "-")
+        if slug in ("index", "home"):
+            continue  # homepage is de home unit
+        units.append(("page", slug, slug, page.get("title", ""), page.get("description", "")))
 
     return units
 
@@ -546,7 +598,9 @@ def main():
 
     company_name = prospect["name"]
     slug         = slugify(company_name)
-    site_dir     = OUTPUT_DIR / f"{slug}-site"
+    project_dir  = OUTPUT_DIR / f"{slug}-next"
+    out_dir      = project_dir / "out"
+    site_dir     = project_dir  # backwards compat voor stappen die site_dir gebruiken
 
     LOG_FILE.write_text("", encoding="utf-8")
 
@@ -633,14 +687,14 @@ def main():
 
     # ── generate ──────────────────────────────────────────────────────────────
     if from_idx <= STEPS.index("generate"):
-        css_dir       = collected_path / "assets" / "css"
-        ref_css_files = sorted(css_dir.glob("*.css")) if css_dir.exists() else []
-        ref_css_path  = ref_css_files[0] if ref_css_files else None
+        # Next.js projectmap (broncode) + output (statische export)
+        project_dir = OUTPUT_DIR / f"{slug}-next"
+        site_dir    = project_dir  # override: site_dir wijst nu naar Next.js project
+        out_dir     = project_dir / "out"  # statische export na build
 
-        # Sla afbeeldingen manifest op
         image_manifest = save_image_manifest(collected_path)
 
-        # Ontdek pagina's (of gebruik bestaande pages.json)
+        # Ontdek pagina's
         n += 1
         pages = None
         if pages_path.exists() and not args.force:
@@ -649,7 +703,6 @@ def main():
                 pages = json.loads(pages_path.read_text(encoding="utf-8")).get("pages", [])
             except Exception as e:
                 log(f"[WARN] pages.json onleesbaar ({e}) — opnieuw ontdekken")
-
         if pages is None:
             pages = step_discover_pages(briefing_path, company_name, pages_path,
                                         n, total, company_name)
@@ -657,69 +710,75 @@ def main():
                 write_status(running=False, prospect=company_name, step="discover_pages", result="failed")
                 sys.exit(1)
 
-        gen_units = build_units(pages)
-        nav_pages = [p["file"] for p in pages] if pages else []
-        nav_pages_with_home = ["index.html"] + [f for f in nav_pages if f != "index.html"]
+        gen_units  = build_units(pages)
+        nav_routes = [""] + [u[2] for u in gen_units if u[0] == "page"]  # "" = home
 
-        home_units  = [(uk, fs, pf, pt, pd) for uk, fs, pf, pt, pd in gen_units if uk == "home_html"]
-        page_units  = [(uk, fs, pf, pt, pd) for uk, fs, pf, pt, pd in gen_units if uk == "page"]
-        asset_units = [(uk, fs, pf, pt, pd) for uk, fs, pf, pt, pd in gen_units
-                       if uk not in ("home_html", "page")]
+        layout_unit = [u for u in gen_units if u[0] == "layout"]
+        home_unit   = [u for u in gen_units if u[0] == "home"]
+        page_units  = [u for u in gen_units if u[0] == "page"]
 
-        total = 6 + len(home_units) + len(page_units) + len(asset_units) * 2 + 1
-        log(f"[INFO] Fase 1: homepage | Fase 2: {len(page_units)} pagina's parallel | Fase 3: styles + scripts")
-        log(f"[INFO] Nav-pagina's: {nav_pages_with_home}")
+        total = 6 + 1 + 1 + 1 + len(page_units) + 1 + 1  # scaffold+layout+home+pages+build+validate
+        log(f"[INFO] Next.js | {len(page_units)} subpagina's | nav-routes: {nav_routes}")
 
-        # ── Fase 1: homepage alleen (bron voor class names + header/footer) ──
-        write_status(running=True, prospect=company_name, step="generate:home", step_n=n, total=total)
+        # ── Stap 0: scaffold ─────────────────────────────────────────────────
+        n += 1
+        if not step_scaffold_nextjs(project_dir, n, total, company_name):
+            write_status(running=False, prospect=company_name, step="scaffold", result="failed")
+            sys.exit(1)
+
+        # Kopieer afbeeldingen naar public/assets/
+        copy_images_to_site(collected_path, project_dir / "public")
+
+        # ── Fase 1: layout (header + footer + globals) ───────────────────────
+        n += 1
+        write_status(running=True, prospect=company_name, step="generate:layout", step_n=n, total=total)
         ok, label, lines = _run_unit_buffered(
-            briefing_path, company_name, "home_html",
-            OUTPUT_DIR / f"{slug}-home-html.txt",
-            None, None, "", "", "",
-            image_manifest, nav_pages_with_home, site_dir,
+            briefing_path, company_name, "layout",
+            OUTPUT_DIR / f"{slug}-layout.txt",
+            None, "", "", "",
+            image_manifest, nav_routes, project_dir,
         )
         for line in lines:
             log(line)
-        n += 1
         if not ok:
-            log("[FAIL] Homepage generatie mislukt")
+            write_status(running=False, prospect=company_name, step="generate:layout", result="failed")
+            sys.exit(1)
+
+        # ── Fase 2: homepage ─────────────────────────────────────────────────
+        n += 1
+        write_status(running=True, prospect=company_name, step="generate:home", step_n=n, total=total)
+        ok, label, lines = _run_unit_buffered(
+            briefing_path, company_name, "home",
+            OUTPUT_DIR / f"{slug}-home.txt",
+            None, "", "", "",
+            image_manifest, nav_routes, project_dir,
+        )
+        for line in lines:
+            log(line)
+        if not ok:
             write_status(running=False, prospect=company_name, step="generate:home", result="failed")
             sys.exit(1)
 
-        # Extraheer header + footer uit index.html als referentie voor subpagina's
-        index_html_path = site_dir / "index.html"
-        ref_path = site_dir / "_header_footer_ref.html"  # altijd gedefinieerd
-        header_footer_ref = ""
-        if index_html_path.exists():
-            homepage_html = index_html_path.read_text(encoding="utf-8", errors="ignore")
-            header_footer_ref = _extract_header_footer(homepage_html)
-            if header_footer_ref:
-                ref_path.write_text(header_footer_ref, encoding="utf-8")
-                log(f"[INFO] Header/footer referentie opgeslagen ({len(header_footer_ref)} tekens)")
-        if not header_footer_ref:
-            log("[WARN] Geen header/footer gevonden in homepage — subpagina's krijgen geen structuurreferentie")
+        # Gebruik homepage TSX als referentie voor subpagina's
+        home_tsx_path = project_dir / "src" / "app" / "page.tsx"
+        ref_tsx = home_tsx_path if home_tsx_path.exists() else None
 
-        # ── Fase 2: subpagina's parallel met homepage als referentie ─────────
+        # ── Fase 3: subpagina's parallel ─────────────────────────────────────
         failed_units: list[str] = []
         batch_start = time.monotonic()
-        # Stuur de volledige homepage als referentie naar subpagina's zodat ze dezelfde
-        # class names hergebruiken voor vergelijkbare componenten. De CSS is gebouwd op
-        # homepage-classes — als subpagina's die ook gebruiken, werkt de CSS automatisch.
-        ref_html_for_pages = index_html_path if index_html_path.exists() else None
-
         write_status(running=True, prospect=company_name, step="generate:parallel", step_n=n, total=total)
+
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = {
                 executor.submit(
                     _run_unit_buffered,
-                    briefing_path, company_name, uk,
-                    OUTPUT_DIR / f"{slug}-{fs}.txt",
-                    ref_html_for_pages, None,
-                    pf, pt, pd,
-                    image_manifest, nav_pages_with_home,
-                    site_dir,
-                ): (uk, fs, pf)
-                for uk, fs, pf, pt, pd in page_units
+                    briefing_path, company_name, "page",
+                    OUTPUT_DIR / f"{slug}-{ps}.txt",
+                    ref_tsx, ps, pt, pd,
+                    image_manifest, nav_routes,
+                    project_dir,
+                ): ps
+                for _, _, ps, pt, pd in page_units
             }
             completed = 0
             for future in as_completed(futures):
@@ -728,8 +787,7 @@ def main():
                 for line in lines:
                     log(line)
                 write_status(running=True, prospect=company_name,
-                             step=f"generate:{label}",
-                             step_n=n + completed, total=total)
+                             step=f"generate:{label}", step_n=n + completed, total=total)
                 if not ok:
                     failed_units.append(label)
 
@@ -748,119 +806,68 @@ def main():
 
         n += len(page_units)
 
-        # ── Fase 2: styles + scripts sequentieel (styles heeft alle HTML nodig) ─
-        for unit_key, file_stem, page_file, page_title, page_desc in asset_units:
-            n += 1
-            out_path = OUTPUT_DIR / f"{slug}-{file_stem}.txt"
+        # ── Fase 4: Next.js build ─────────────────────────────────────────────
+        n += 1
+        if not step_build_nextjs(project_dir, n, total, company_name):
+            write_status(running=False, prospect=company_name, step="build_nextjs", result="failed")
+            sys.exit(1)
 
-            if unit_key == "styles":
-                # Gebruik index.html als primaire HTML-referentie (zet het ontwerp)
-                index_html_path = site_dir / "index.html"
-                ref_html = index_html_path if index_html_path.exists() else None
-                ref_css  = ref_css_path
-                # Extraheer alle unieke class names uit ALLE gegenereerde pagina's
-                # State/utility classes die geen eigen CSS-blok nodig hebben
-                _SKIP_CLASSES = {
-                    "active", "inactive", "open", "closed", "hidden", "visible",
-                    "disabled", "selected", "checked", "loading", "loaded",
-                    "is-active", "is-open", "is-hidden", "is-visible",
-                    "no-js", "js", "sr-only", "clearfix", "container",
-                }
-                # Subpagina's hergebruiken nu dezelfde class names als de homepage, dus
-                # het totaal aantal unieke classes over alle pagina's blijft beperkt.
-                # We verzamelen uit alle gegenereerde pagina's — zo dekt de CSS alles af.
-                all_classes = set()
-                for html_file in sorted(site_dir.glob("*.html")):
-                    if html_file.name.startswith("_"):
-                        continue
-                    try:
-                        html_content = html_file.read_text(encoding="utf-8", errors="ignore")
-                        for m in re.finditer(r'class="([^"]+)"', html_content):
-                            for cls in m.group(1).split():
-                                if cls not in _SKIP_CLASSES and not cls.startswith("js-"):
-                                    all_classes.add(cls)
-                    except Exception:
-                        pass
-                class_list_str = "\n".join(f"- .{c}" for c in sorted(all_classes))
-                page_desc = class_list_str
-                log(f"[INFO] styles: {len(all_classes)} unieke CSS-klassen over alle pagina's")
-            elif unit_key == "scripts":
-                # Scripts ziet index.html zodat het exact de juiste class names en IDs gebruikt
-                index_html_path = site_dir / "index.html"
-                ref_html = index_html_path if index_html_path.exists() else None
-                ref_css  = None
-            else:
-                ref_html = None
-                ref_css  = None
-
-            if not step_generate_unit(briefing_path, company_name, unit_key,
-                                       out_path, ref_html, ref_css, n, total,
-                                       page_file=page_file, page_title=page_title, page_desc=page_desc,
-                                       image_manifest=image_manifest,
-                                       nav_pages=nav_pages_with_home):
-                write_status(running=False, prospect=company_name,
-                             step=f"generate:{unit_key}", result="failed")
-                sys.exit(1)
-
-            n += 1
-            if not step_parse_unit(out_path, site_dir, n, total, company_name):
-                write_status(running=False, prospect=company_name,
-                             step=f"parse:{file_stem}", result="failed")
-                sys.exit(1)
-
-        # Kopieer originele afbeeldingen naar gegenereerde site
-        copy_images_to_site(collected_path, site_dir)
+        if not out_dir.exists():
+            log(f"[FAIL] /out directory niet gevonden na build: {out_dir}")
+            write_status(running=False, prospect=company_name, step="build_nextjs", result="failed")
+            sys.exit(1)
+        log(f"[OK]  Statische export: {out_dir} ({len(list(out_dir.rglob('*.html')))} HTML-bestanden)")
 
     # ── validate_site → repair → re-validate ─────────────────────────────────
+    # Voor Next.js: validate/repair/polish draaien op de /out directory
+    validate_dir = out_dir if (project_dir / "out").exists() else site_dir
+
     if from_idx <= STEPS.index("validate"):
         n += 1
         json_out = OUTPUT_DIR / f"{slug}-validation.json"
-        if not step_validate_site(site_dir, json_out, n, total, company_name):
+        if not step_validate_site(validate_dir, json_out, n, total, company_name):
             log("[INFO] Site heeft validatiefouten — reparatie uitvoeren...")
             n += 1
-            step_repair_site(site_dir, json_out, n, total, company_name)
+            step_repair_site(validate_dir, json_out, n, total, company_name)
             n += 1
-            if not step_validate_site(site_dir, json_out, n, total, company_name):
+            if not step_validate_site(validate_dir, json_out, n, total, company_name):
                 log(f"[WARN] Site heeft nog steeds validatiefouten na reparatie. Rapport: {json_out}")
-                # Niet afbreken — warnings zijn acceptabel, de site is bruikbaar
         else:
-            # Validatie geslaagd — toch reparatie uitvoeren voor site-brede fixes
-            # (hamburger, sr-only, footerYear, ref-files) die de validator niet dekt
             n += 1
-            step_repair_site(site_dir, json_out, n, total, company_name)
+            step_repair_site(validate_dir, json_out, n, total, company_name)
 
-        # ── Content-check: bedrijfsnaam, contact, placeholders, paginastructuur ──
+        # ── Content-check ──────────────────────────────────────────────────────
         n += 1
-        step_check_content(site_dir, collected_path, company_name, n, total, company_name)
+        step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
 
-        # ── Screenshot-validatie: visuele problemen detecteren via Claude Vision ──
+        # ── Screenshot-validatie ───────────────────────────────────────────────
         n += 1
-        screenshot_json = site_dir / "screenshot_validation.json"
-        step_screenshot_validate(site_dir, n, total, company_name)
+        screenshot_json = validate_dir / "screenshot_validation.json"
+        step_screenshot_validate(validate_dir, n, total, company_name)
 
-        # ── Screenshot-repair: pas visuele fixes toe als er issues zijn ──────────
+        # ── Screenshot-repair ──────────────────────────────────────────────────
         if screenshot_json.exists():
             try:
                 shot_data = json.loads(screenshot_json.read_text(encoding="utf-8"))
                 if shot_data.get("total_issues", 0) > 0:
                     n += 1
-                    log(f"[INFO] {shot_data['total_issues']} visuele issue(s) gevonden — screenshot-repair uitvoeren...")
-                    step_repair_site(site_dir, json_out, n, total, company_name,
+                    log(f"[INFO] {shot_data['total_issues']} visuele issue(s) — screenshot-repair...")
+                    step_repair_site(validate_dir, json_out, n, total, company_name,
                                      screenshot_json=screenshot_json)
                 else:
                     log("[INFO] Geen visuele issues — screenshot-repair overgeslagen")
             except Exception as e:
                 log(f"[WARN] Kon screenshot_validation.json niet lezen: {e}")
 
-        # ── Cohesion pass: AI-check op consistentie tussen alle pagina's ─────────
+        # ── Cohesion pass ──────────────────────────────────────────────────────
         n += 1
-        log("\n[INFO] Cohesion pass uitvoeren (CSS-overrides voor consistentie subpagina's)...")
-        step_cohesion_pass(site_dir, n, total, company_name)
+        log("\n[INFO] Cohesion pass uitvoeren...")
+        step_cohesion_pass(validate_dir, n, total, company_name)
 
-        # ── Polish: dedupliceer pagina's + herstel header-consistentie + demo-banner ──
+        # ── Polish ─────────────────────────────────────────────────────────────
         n += 1
-        log("\n[INFO] Polish uitvoeren (deduplicatie + header-consistentie + demo-banner)...")
-        step_polish_site(site_dir, company_name, n, total, company_name)
+        log("\n[INFO] Polish uitvoeren...")
+        step_polish_site(validate_dir, company_name, n, total, company_name)
 
         # ── Outreach-mail genereren ───────────────────────────────────────────
         n += 1

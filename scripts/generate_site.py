@@ -6,6 +6,27 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
+PROMPTS_DIR = Path("/workspace/prompts/impeccable")
+
+
+def _load_impeccable() -> str:
+    """Laad relevante Impeccable referentiebestanden als design-context."""
+    files = [
+        "typography.md",
+        "color-and-contrast.md",
+        "spatial-design.md",
+        "responsive-design.md",
+        "interaction-design.md",
+    ]
+    parts = []
+    for f in files:
+        path = PROMPTS_DIR / f
+        if path.exists():
+            parts.append(f"### {f}\n{path.read_text(encoding='utf-8')[:2000]}")
+    if not parts:
+        return ""
+    return "\n\n".join(parts)
+
 
 def read_text(path: Path) -> str:
     if not path.exists():
@@ -18,397 +39,209 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def common_rules(briefing: str, company_name: str, images: list[str] | None = None,
+def common_rules(briefing: str, company_name: str,
+                 images: list[str] | None = None,
                  nav_pages: list[str] | None = None) -> str:
+    impeccable = _load_impeccable()
+    impeccable_section = f"""
+## Design referentie (Impeccable)
+{impeccable}
+""" if impeccable else ""
+
     image_section = ""
     if images:
         image_list = "\n".join(f"- {img}" for img in images)
         image_section = f"""
-## Beschikbare afbeeldingen van de originele site
-Gebruik waar logisch en visueel passend deze echte afbeeldingen in de HTML.
-Gebruik de EXACTE bestandsnamen zoals hieronder, als relatief pad vanuit het HTML-bestand.
-Kies afbeeldingen die passen bij de context van de sectie (hero, team, diensten, gallerij, etc.).
-Als geen relevante afbeelding beschikbaar is, gebruik dan: <img src="assets/images/placeholder.jpg" alt="beschrijving">
-
+## Beschikbare afbeeldingen
+Gebruik deze echte afbeeldingen waar passend. Pad is relatief aan de projectroot (public/).
 {image_list}
-
 """
 
-    default_nav = ["index.html", "over-ons.html", "pakketten.html", "showcase.html", "contact.html"]
-    pages_for_nav = nav_pages if nav_pages else default_nav
-    nav_list = "\n".join(f"  - {p}" for p in pages_for_nav) + "\n"
+    default_nav = ["", "over-ons", "diensten", "contact"]
+    routes = nav_pages if nav_pages else default_nav
+    nav_list = "\n".join(f"  - /{r}" for r in routes) + "\n"
 
-    return f"""
-Je bent een senior front-end developer en webdesigner.
+    return f"""Je bent een senior React/Next.js developer en webdesigner.
 
-Gebruik onderstaande briefing om statische websitebestanden te genereren voor {company_name}.
-{image_section}
-## Harde beperkingen — NOOIT overtreden
-- Gebruik in HTML UITSLUITEND `assets/css/style.css` als stylesheet — geen components.css, geen andere CSS-bestanden
-- Gebruik in HTML UITSLUITEND `assets/js/main.js` als script — geen andere JS-bestanden
-- Alle interne `<a href>` links mogen UITSLUITEND verwijzen naar de onderstaande pagina's of naar ankers (#…):
-{nav_list}  Maak GEEN enkele link naar HTML-bestanden die niet in deze lijst staan.
-  Als je een dienst wilt noemen zonder linkbare pagina: schrijf gewoon tekst of link naar contact.html.
-- Geen markdown in je output
-- Geen uitleg, alleen bestanden
+Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
+Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
+{impeccable_section}{image_section}
+## Harde beperkingen
+- Gebruik UITSLUITEND Tailwind utility classes voor styling
+- Geen inline style= attributen behalve voor dynamische waarden
+- Alle interne links via Next.js `<Link href="...">` component
+- Navigatieroutes zijn UITSLUITEND:
+{nav_list}  Maak GEEN links naar routes die niet in deze lijst staan
+- Geen markdown in je output, geen uitleg — alleen bestanden
+- Voeg `"use client"` toe aan elk component dat hooks of event handlers gebruikt
+- Afbeeldingen: gebruik gewone `<img>` tags (geen next/image — statische export)
 
-## Overige regels
-- Bouw statische bestanden
-- Gebruik alleen HTML, CSS en minimale vanilla JavaScript
-- Geen React, Next.js, Vue, npm of build tooling
-- Responsive en modern
-- Geen lorem ipsum
-- Geen verzonnen feiten buiten de briefing
-- Schrijf teksten in het Nederlands
-- Gebruik relatieve links
-- Gebruik nette, production-minded code
-- Gebruik dezelfde visuele richting op alle pagina's
-- Gebruik GEEN em-dashes (—) in lopende tekst, gebruik een komma, punt of nieuwe zin als dat natuurlijker klinkt
-- Zorg altijd voor voldoende contrast: witte tekst op donkere achtergrond minimaal `rgba(255,255,255,0.9)`, nooit lager dan 0.85. Donkere tekst op lichte achtergrond: gebruik `var(--color-text)` of `#1a1a1a`, nooit een muted kleur op een al lichte achtergrond.
-- **Kaarten binnen donkere secties**: als een kaart of component een lichte achtergrond heeft (`background: white`, `rgba(255,255,255,...)` of een lichte CSS-variabele), schrijf dan ALTIJD expliciet `color: var(--color-text, #1a1a1a)` op die kaart zelf — nooit vertrouwen op overerving van de parent-sectie.
-- **CSS coverage**: schrijf voor elke class name die je in de HTML gebruikt ook daadwerkelijk een CSS-regel. Laat geen klassen ongestijld.
+## Technische eisen
+- TypeScript met eenvoudige types (geen complexe generics)
+- Import paths: `@/components/...`, `@/lib/...`
+- Elk bestand begint met imports, daarna de component, daarna `export default`
+- Tailwind responsive: mobile-first, gebruik `md:` en `lg:` prefixes
 
-## Footer — ALTIJD deze vaste structuur
-```html
-<footer class="site-footer">
-  <div class="container">
-    <div class="footer-grid">
-      <div class="footer-col footer-col--brand">...</div>
-      <div class="footer-col">...</div>
-      <!-- meer kolommen -->
+## Design principes (anti-patronen vermijden)
+- GEEN Inter als enige font — combineer met een serif of display font
+- GEEN grijze tekst op gekleurde achtergrond
+- GEEN cards genest in cards
+- GEEN pure zwart/grijs — altijd getinte neutrals
+- Spacing: consistent 4px grid via Tailwind (p-4, p-8, gap-6, etc.)
+- Elke sectie heeft duidelijke visuele hiërarchie
+
+## Conversie-eisen
+- Telefoonnummer als klikbare `<a href="tel:...">` in de header
+- CTA-sectie met primaire knop op ELKE pagina voor de footer
+- WhatsApp-link als mobiel nummer in briefing staat: `https://wa.me/31XXXXXXXXX`
+
+## Footer — ALTIJD exact deze structuur
+```tsx
+<footer className="bg-[kleur] text-white">
+  <div className="container mx-auto px-4 py-12">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div>{{/* brand + adres */}}</div>
+      <div>{{/* navigatie */}}</div>
+      <div>{{/* contact */}}</div>
     </div>
-    <div class="footer-bottom">
-      <p>&copy; <span id="footerYear"></span> Bedrijfsnaam. Alle rechten voorbehouden.</p>
+    <div className="border-t border-white/20 mt-8 pt-6 text-sm text-white/60">
+      <p>&copy; {{new Date().getFullYear()}} {company_name}</p>
     </div>
   </div>
 </footer>
 ```
-Regels:
-- Container: ALTIJD `<footer class="site-footer">` met `<div class="container">` erbinnen
-- Grid: ALTIJD `<div class="footer-grid">` met kinderen `<div class="footer-col">`
-- Eerste kolom: ALTIJD `class="footer-col footer-col--brand"` (logo + tagline + adres)
-- Onderste balk: ALTIJD `<div class="footer-bottom">` met copyright en `id="footerYear"`
-- Geen `.footer-inner` wrapper — padding zit op `.site-footer` zelf via CSS
-
-## Conversie — ALTIJD aanwezig op elke pagina
-- **Telefoon in de header**: als de briefing een telefoonnummer bevat, zet het als klikbare link in de `<header>`:
-  `<a href="tel:+31XXXXXXXXX" class="header-phone">📞 06-12345678</a>`
-- **CTA-sectie vóór de footer**: elke pagina (ook subpagina's) moet een `<section class="cta-section">` hebben
-  direct boven `<footer>`. Minimaal: een korte pakkende tekst + primaire knop naar contact.html.
-  Voorbeeld: "Benieuwd wat we voor jou kunnen doen? → Neem contact op"
-- **WhatsApp-knop**: als er een mobiel nummer in de briefing staat, voeg een WhatsApp-link toe in de CTA-sectie:
-  `<a href="https://wa.me/31XXXXXXXXX" class="btn btn-whatsapp">💬 WhatsApp</a>`
-- **Klikbaar telefoonnummer in footer**: altijd `<a href="tel:...">` om het nummer, nooit platte tekst
-
-## Formulieren
-- Gebruik voor alle contactformulieren: `<form action="https://formspree.io/f/FORMSPREE_ID" method="POST">`
-- Voeg een hidden `<input type="hidden" name="_subject" value="Nieuw bericht via website">` toe
-- Voeg `<input type="text" name="_gotcha" style="display:none">` toe als spam-bescherming
-- Voeg na het formulier een klein commentaar toe: `<!-- Vervang FORMSPREE_ID door uw eigen Formspree endpoint -->`
-
-## Google Maps
-- Als er een adres in de briefing staat: voeg op de contactpagina een Google Maps embed in
-- Gebruik: `<iframe src="https://maps.google.com/maps?q=ADRES&output=embed" width="100%" height="300" style="border:0;border-radius:8px" allowfullscreen loading="lazy"></iframe>`
-- Vervang ADRES door het URL-encoded adres uit de briefing
-
-## FAQ accordion — ALTIJD deze structuur, geen uitzonderingen
-Gebruik NOOIT `<details>`/`<summary>` voor FAQ-secties. Gebruik uitsluitend:
-```html
-<div class="faq-item">
-  <button class="faq-question" aria-expanded="false">
-    Vraag hier
-    <svg class="faq-icon" viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-  </button>
-  <div class="faq-answer">
-    <p>Antwoord hier</p>
-  </div>
-</div>
-```
-Regels:
-- Container: ALTIJD `.faq-item` (nooit `.faq__item`)
-- Trigger: ALTIJD `<button class="faq-question">` (nooit `faq-item__question`, nooit `faq__question`)
-- Inhoud: ALTIJD `<div class="faq-answer">` (nooit `faq-item__answer`, nooit `faq__answer`)
-- Geen `hidden` attribuut op `.faq-answer` — de JS regelt zichtbaarheid via `max-height`
-- Wrapper voor meerdere items: `<div class="faq-list">` of `<section class="faq">`
-
-## Wat NOOIT mag worden verzonnen
-Dit zijn secties die je WEGLAAT als de briefing er geen concrete data voor bevat:
-- Klantreviews of testimonials: alleen opnemen als er letterlijke citaten of klantnamen in de briefing staan
-- Statistieken en cijfers: "500+ klanten", "10 jaar ervaring", "98% tevreden" alleen als dit expliciet in de briefing staat
-- Teamnamen, functies of persoonlijke verhalen van medewerkers: alleen als de briefing dit noemt
-- Prijzen en tarieven: alleen concrete bedragen uit de briefing, geen verzonnen prijsranges
-- Certificaten, diploma's of keurmerken: alleen als de briefing ze noemt
-
-Als zo'n sectie ontbreekt in de briefing: laat de sectie volledig weg. Voeg geen placeholder-tekst toe zoals "Voeg hier uw reviews toe" — laat het gewoon achterwege. Een compacte site zonder die secties is beter dan een site met verzonnen inhoud.
 
 ## Briefing
 {briefing}
 """
 
 
-def extract_classes(html: str) -> str:
-    """Extraheer unieke CSS-class names uit HTML voor gebruik in de styles-prompt."""
-    import re
-    classes = set()
-    for match in re.finditer(r'class="([^"]+)"', html):
-        for cls in match.group(1).split():
-            classes.add(cls)
-    return " ".join(sorted(classes))
+def build_unit_part(unit: str, ref_tsx: str = "",
+                    page_slug: str = "", page_title: str = "",
+                    page_desc: str = "") -> str:
 
-
-def build_unit_part(unit: str, ref_html: str = "", ref_css: str = "",
-                    page_file: str = "", page_title: str = "", page_desc: str = "") -> str:
-    """Returnt het unit-specifieke deel van de prompt (wordt NIET gecached)."""
-    if unit == "home_html":
+    if unit == "layout":
         return """
 ## Opdracht
-Genereer ALLEEN dit bestand:
+Genereer deze bestanden:
 
-===FILE: index.html===
+===FILE: src/app/layout.tsx===
 ...inhoud...
 ===END_FILE===
 
-## Extra eisen
-- Maak een complete homepage
-- Inclusief header, hero, secties, intake CTA en footer
-- Voeg in `<head>` ALTIJD toe: `<meta name="viewport" content="width=device-width, initial-scale=1">`
-- Laad Google Fonts via `<link rel="stylesheet">` in `<head>` — NOOIT via @import in CSS
-- Verwijs naar assets/css/style.css (ALLEEN dit stylesheet, niets anders)
-- Verwijs naar assets/js/main.js (ALLEEN dit script, niets anders)
-- Gebruik géén inline CSS
-- Gebruik géén inline JS
-- Gebruik duidelijke class names
+===FILE: src/components/Header.tsx===
+...inhoud...
+===END_FILE===
+
+===FILE: src/components/Footer.tsx===
+...inhoud...
+===END_FILE===
+
+===FILE: src/app/globals.css===
+...inhoud...
+===END_FILE===
+
+## Eisen layout.tsx
+- Root layout met `<html lang="nl">`, metadata (title template, description)
+- Importeer Header en Footer components
+- Importeer globals.css
+- Importeer Google Fonts via `next/font/google` (kies 2 complementaire fonts)
+
+## Eisen Header.tsx
+- `"use client"` directive (heeft state voor mobile menu)
+- Logo/bedrijfsnaam links, navigatie rechts
+- Mobiel hamburger menu met slide-in nav
+- Telefoonnummer als klikbare `tel:` link (indien in briefing)
+- Sticky met subtiele shadow na scrollen (`useEffect` + `scroll` event)
+- Actieve route highlighten via `usePathname()`
+
+## Eisen Footer.tsx
+- Gebruik exact de footer-structuur uit de gemeenschappelijke regels
+- Geen "use client" nodig
+
+## Eisen globals.css
+- `@tailwind base; @tailwind components; @tailwind utilities;`
+- CSS custom properties voor brand-kleuren (uit briefing)
+- Maximaal 50 regels
 """
 
-    if unit == "styles":
-        ref_section = ""
-        if ref_html:
-            ref_section += f"""
-## HTML structuurreferentie (index.html)
-De homepage bepaalt het ontwerp. Stijl de class names exact zoals ze hieronder voorkomen.
-
-```html
-{ref_html[:15000]}
-```
-"""
-        if ref_css:
-            ref_section += f"""
-## Originele CSS van de bestaande site (visuele referentie)
-Neem de exacte kleuren, fonts, border-radius, spacing en shadows over.
-Gebruik NIET dezelfde class names.
-
-```css
-{ref_css[:8000]}
-```
-"""
-
-        class_list_section = ""
-        if page_desc:
-            class_list_section = f"""
-## Structurele class names (uit homepage + gedeelde componenten)
-Dit zijn de class names van de gedeelde componenten (header, nav, footer, hero, cards, buttons).
-Zorg dat deze class names exact gestijld zijn. Subpagina's hergebruiken dezelfde structuur.
-Voor class names die op subpagina's voorkomen maar niet in de lijst staan: laat stijlen erven
-van de dichtstbijzijnde overeenkomende component (bijv. `.dienst-hero` erft van `.hero`).
-
-{page_desc}
-"""
-
-        return ref_section + class_list_section + """
+    if unit == "home":
+        return f"""
 ## Opdracht
 Genereer ALLEEN dit bestand:
 
-===FILE: assets/css/style.css===
+===FILE: src/app/page.tsx===
 ...inhoud...
 ===END_FILE===
 
-## Extra eisen
-- Stijl alle class names uit de lijst hierboven expliciet
-- Schrijf daarnaast uitgebreide basis HTML-elementstijlen (h1-h6, p, a, ul, section, article,
-  main, form, input, textarea, button) zodat subpagina-elementen zonder eigen class-regel
-  er netjes uitzien via overerving
-- Neem kleuren, fonts en stijlkeuzes over uit de originele CSS-referentie
-- NOOIT @import in CSS — Google Fonts worden via `<link>` in HTML geladen, niet hier
-- Gebruik CSS variables in :root voor kleuren, spacing en fonts
-- Mobile first, geen comments
-- Dek af: header, mobile nav, hero, cards, grids, buttons, forms, footer, page hero
-
-## Responsive layout — VERPLICHT voor elk tweekoloms-patroon
-Voor ELKE container die op mobiel `flex-direction: column` heeft en op desktop naast elkaar
-hoort te staan: voeg altijd een `@media (min-width: 768px)` breakpoint toe met `flex-direction: row`.
-Dit geldt voor: intro-secties, over-ons, dienst-kaarten, propositie-blokken, feature-rijen, team-secties.
-Patroon dat je ALTIJD moet volgen:
-```css
-.voorbeeld-inner {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-@media (min-width: 768px) {
-  .voorbeeld-inner {
-    flex-direction: row;
-    align-items: flex-start;
-  }
-  .voorbeeld-image { width: 42%; }
-  .voorbeeld-content { flex: 1; }
-}
-```
-Zonder dit breakpoint blijven secties op desktop onnodig gestapeld.
-
-## Vaste afspraken voor open/active states — GEBRUIK ALTIJD EXACT DEZE KLASSEN
-- Mobiel nav open: `nav.is-open` (of het exacte nav-element met `.is-open`)
-- Dropdown open: `.nav-dropdown.is-open` of `.site-nav__dropdown.is-open`
-- Sticky header: `header.is-scrolled`
-- FAQ item open: `.faq__item.is-open` of `.faq-item.is-open`
-Gebruik NOOIT `--open`, `--active`, `show` of andere varianten voor deze states.
-"""
-
-    if unit == "scripts":
-        ref_section = ""
-        if ref_html:
-            ref_section = f"""
-## HTML referentie (index.html)
-Gebruik de EXACTE class names en IDs uit deze HTML voor event listeners en selectors.
-Raad geen class names — lees ze af uit de HTML hieronder.
-
-```html
-{ref_html[:8000]}
-```
-"""
-        return ref_section + """
-## Opdracht
-Genereer ALLEEN dit bestand:
-
-===FILE: assets/js/main.js===
-...inhoud...
-===END_FILE===
-
-## Extra eisen
-- Gebruik alleen class names en IDs die voorkomen in de HTML referentie hierboven
-- Ondersteun: mobiele navigatie toggle, sticky header, FAQ accordion, smooth scroll
-- Geen libraries, defensive code
-- Dropdown hover op desktop: gebruik altijd een sluitvertraging van 200ms via setTimeout zodat de gebruiker de muis naar het submenu kan bewegen zonder dat het wegklapt. Annuleer de timer bij mouseenter met clearTimeout.
-
-## Vaste afspraken voor open/active states — GEBRUIK ALTIJD EXACT DEZE KLASSEN
-- Mobiel nav open: voeg `is-open` toe aan het `<nav>` element (niet aan een wrapper)
-- Dropdown open: voeg `is-open` toe aan het `<ul>` dropdown-element direct (niet aan de parent `<li>`)
-- Sticky header: voeg `is-scrolled` toe aan het `<header>` element
-- FAQ item open: voeg `is-open` toe aan het `.faq__item` of `.faq-item` element
-Deze klassen zijn ook zo gedefineerd in de bijbehorende CSS — gebruik NIETS anders (geen `--open`, geen `--active`, geen `show`).
-"""
-
-    if unit == "over_ons":
-        return """
-## Opdracht
-Genereer ALLEEN dit bestand:
-
-===FILE: over-ons.html===
-...inhoud...
-===END_FILE===
-
-## Extra eisen
-- Gebruik dezelfde header/footer structuur als de homepage
-- Verwijs naar assets/css/style.css en assets/js/main.js
-- Gaat over bedrijf, werkwijze en vertrouwen
-"""
-
-    if unit == "pakketten":
-        return """
-## Opdracht
-Genereer ALLEEN dit bestand:
-
-===FILE: pakketten.html===
-...inhoud...
-===END_FILE===
-
-## Extra eisen
-- Gebruik dezelfde header/footer structuur als de homepage
-- Verwijs naar assets/css/style.css en assets/js/main.js
-- Pakketvergelijking met duidelijke verschillen en CTA
-- Houd de HTML compact: maximaal 350 regels
-"""
-
-    if unit == "showcase":
-        return """
-## Opdracht
-Genereer ALLEEN dit bestand:
-
-===FILE: showcase.html===
-...inhoud...
-===END_FILE===
-
-## Extra eisen
-- Gebruik dezelfde header/footer structuur als de homepage
-- Verwijs naar assets/css/style.css en assets/js/main.js
-- Portfolio/cases tonen met placeholders waar nodig
-- Maximaal 4 showcase-items, geen herhalingen
-"""
-
-    if unit == "contact":
-        return """
-## Opdracht
-Genereer ALLEEN dit bestand:
-
-===FILE: contact.html===
-...inhoud...
-===END_FILE===
-
-## Extra eisen
-- Gebruik dezelfde header/footer structuur als de homepage
-- Verwijs naar assets/css/style.css en assets/js/main.js
-- Duidelijke contactstructuur en formulier
+## Eisen
+- Complete homepage: hero, diensten/features, over-sectie, CTA-sectie, eventueel FAQ
+- Importeer Header en Footer NIET — die zitten in layout.tsx
+- Gebruik Tailwind voor alle styling
+- Hero: grote heading, subtitel, 2 CTA-knoppen (primair + secundair)
+- Elke sectie heeft `<section>` met id voor anchor-links
+- CTA-sectie voor de footer: pakkende tekst + primaire knop naar /contact
 """
 
     if unit == "page":
-        if not page_file:
-            raise ValueError("--page-file is verplicht voor unit 'page'")
-        title = page_title or page_file.replace(".html", "").replace("-", " ").title()
-        desc  = f"\n- Doel en inhoud: {page_desc}" if page_desc else ""
+        if not page_slug:
+            raise ValueError("--page-slug is verplicht voor unit 'page'")
+        title = page_title or page_slug.replace("-", " ").title()
+        desc  = f"\n- Doel: {page_desc}" if page_desc else ""
 
         ref_section = ""
-        if ref_html:
+        if ref_tsx:
             ref_section = f"""
-## Homepage referentie
-Dit is de volledige homepage. Gebruik dit als visuele en structurele leidraad.
-
-**Verplichte regels:**
-1. Kopieer de `<header>` en `<footer>` EXACT — inclusief alle class names, structuur en attributen.
-2. Voor je `<main>` inhoud: gebruik DEZELFDE class names als de homepage voor vergelijkbare
-   componenten. Hero-sectie → gebruik `.hero`. Kaartjes → gebruik `.card`. Grid → gebruik `.grid`.
-   Buttons → gebruik `.btn`, `.btn-primary`. Zo werkt de gedeelde CSS automatisch op elke pagina.
-3. Verzin GEEN nieuwe class names voor componenten die al in de homepage bestaan.
-
-```html
-{ref_html[:15000]}
+## Homepage referentie (page.tsx)
+Gebruik dezelfde Tailwind klassen en component-patronen voor consistentie.
+```tsx
+{ref_tsx[:4000]}
 ```
 """
-
         return ref_section + f"""
 ## Opdracht
 Genereer ALLEEN dit bestand:
 
-===FILE: {page_file}===
+===FILE: src/app/{page_slug}/page.tsx===
 ...inhoud...
 ===END_FILE===
 
-## Extra eisen
-- Paginanaam: {title}{desc}
-- Voeg in `<head>` ALTIJD toe: `<meta name="viewport" content="width=device-width, initial-scale=1">`
-- Laad Google Fonts via `<link rel="stylesheet">` in `<head>` — NOOIT via @import in CSS
-- Verwijs naar assets/css/style.css en assets/js/main.js
-- Houd de HTML compact maar volledig: maximaal 450 regels
+## Eisen
+- Pagina: {title}{desc}
+- Importeer Header/Footer NIET (zitten in root layout)
+- Page hero: `<section>` met achtergrondkleur, grote h1, korte beschrijving
+- Gebruik dezelfde Tailwind patronen als de homepage referentie
+- CTA-sectie voor het einde van de pagina
+- Maximaal 300 regels
 """
 
-    raise ValueError("unit moet één van deze zijn: home_html, styles, scripts, over_ons, pakketten, showcase, contact, page")
+    if unit == "globals":
+        return f"""
+## Opdracht
+Genereer ALLEEN dit bestand:
+
+===FILE: src/app/globals.css===
+...inhoud...
+===END_FILE===
+
+## Eisen
+- Tailwind directives: @tailwind base/components/utilities
+- CSS custom properties voor brand-kleuren (uit briefing)
+- Subtiele typografie-verbeteringen (font smoothing, line-height)
+- Maximaal 60 regels
+"""
+
+    raise ValueError(f"Onbekende unit: {unit}")
 
 
-def build_prompt(briefing: str, company_name: str, unit: str, ref_html: str = "", ref_css: str = "",
-                 page_file: str = "", page_title: str = "", page_desc: str = "",
-                 images: list[str] | None = None, nav_pages: list[str] | None = None) -> tuple[str, str]:
-    """Returnt (cacheable_base, unit_part) voor gebruik met prompt caching."""
+def build_prompt(briefing: str, company_name: str, unit: str,
+                 ref_tsx: str = "", page_slug: str = "",
+                 page_title: str = "", page_desc: str = "",
+                 images: list[str] | None = None,
+                 nav_pages: list[str] | None = None) -> tuple[str, str]:
     base      = common_rules(briefing, company_name, images=images, nav_pages=nav_pages)
-    unit_part = build_unit_part(unit, ref_html=ref_html, ref_css=ref_css,
-                                page_file=page_file, page_title=page_title, page_desc=page_desc)
+    unit_part = build_unit_part(unit, ref_tsx=ref_tsx, page_slug=page_slug,
+                                page_title=page_title, page_desc=page_desc)
     return base, unit_part
 
 
@@ -422,44 +255,34 @@ def extract_response_text(response) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--brief", required=True, help="Pad naar briefing.md")
-    parser.add_argument("--company", required=True, help="Bedrijfsnaam")
-    parser.add_argument("--unit", required=True,
-                        choices=["home_html", "styles", "scripts", "over_ons", "pakketten", "showcase", "contact", "page"])
-    parser.add_argument("--out",        required=True, help="Pad naar raw output bestand")
-    parser.add_argument("--ref-html",   help="Pad naar gegenereerde HTML voor class name context (alleen voor styles)")
-    parser.add_argument("--ref-css",    help="Pad naar originele CSS voor visuele referentie (alleen voor styles)")
-    parser.add_argument("--page-file",       help="Bestandsnaam van de pagina (alleen voor unit 'page')")
-    parser.add_argument("--page-title",      help="Paginatitel (alleen voor unit 'page')")
-    parser.add_argument("--page-desc",       help="Beschrijving/doel van de pagina (alleen voor unit 'page')")
-    parser.add_argument("--image-manifest",  help="Pad naar images.json met lijst van beschikbare afbeeldingen")
-    parser.add_argument("--nav-pages",       help="JSON-array van HTML-bestandsnamen voor de navigatie, bijv. '[\"index.html\",\"contact.html\"]'")
+    parser.add_argument("--brief",      required=True)
+    parser.add_argument("--company",    required=True)
+    parser.add_argument("--unit",       required=True,
+                        choices=["layout", "home", "page", "globals"])
+    parser.add_argument("--out",        required=True)
+    parser.add_argument("--ref-tsx",    default="", help="Homepage TSX als referentie voor subpagina's")
+    parser.add_argument("--page-slug",  default="")
+    parser.add_argument("--page-title", default="")
+    parser.add_argument("--page-desc",  default="")
+    parser.add_argument("--image-manifest", default="")
+    parser.add_argument("--nav-pages",  default="")
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
-    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-
+    model   = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY ontbreekt in environment")
+        raise RuntimeError("ANTHROPIC_API_KEY ontbreekt")
 
-    briefing_path = Path(args.brief)
-    out_path = Path(args.out)
+    briefing = read_text(Path(args.brief))
 
-    briefing = read_text(briefing_path)
-
-    ref_html = ""
-    if args.ref_html:
-        ref_html = read_text(Path(args.ref_html))
-
-    ref_css = ""
-    if args.ref_css:
-        ref_css = read_text(Path(args.ref_css))
+    ref_tsx = ""
+    if args.ref_tsx and Path(args.ref_tsx).exists():
+        ref_tsx = Path(args.ref_tsx).read_text(encoding="utf-8", errors="ignore")
 
     images = None
     if args.image_manifest:
         try:
             images = json.loads(Path(args.image_manifest).read_text(encoding="utf-8"))
-            print(f"[INFO] Afbeeldingen meegegeven: {len(images)}")
         except Exception:
             pass
 
@@ -467,60 +290,43 @@ def main():
     if args.nav_pages:
         try:
             nav_pages = json.loads(args.nav_pages)
-            print(f"[INFO] Nav-pagina's: {nav_pages}")
         except Exception:
             pass
 
-    base, unit_part = build_prompt(briefing, args.company, args.unit,
-                                   ref_html=ref_html, ref_css=ref_css,
-                                   page_file=args.page_file  or "",
-                                   page_title=args.page_title or "",
-                                   page_desc=args.page_desc  or "",
-                                   images=images, nav_pages=nav_pages)
+    base, unit_part = build_prompt(
+        briefing, args.company, args.unit,
+        ref_tsx=ref_tsx, page_slug=args.page_slug,
+        page_title=args.page_title, page_desc=args.page_desc,
+        images=images, nav_pages=nav_pages,
+    )
 
     UNIT_MAX_TOKENS = {
-        "home_html": 14000,
-        "styles":    40000,
-        "scripts":    5000,
-        "over_ons":   8000,
-        "pakketten":  8000,
-        "showcase":   8000,
-        "contact":    6000,
-        "page":      12000,
+        "layout":  8000,
+        "home":   12000,
+        "page":    8000,
+        "globals": 2000,
     }
     max_tokens = UNIT_MAX_TOKENS.get(args.unit, 8000)
 
     client = Anthropic(api_key=api_key)
-
-    print(f"[INFO] Model: {model} | max_tokens: {max_tokens}")
+    print(f"[INFO] Model: {model} | unit: {args.unit} | max_tokens: {max_tokens}")
 
     messages_payload = [{
         "role": "user",
         "content": [
-            {
-                "type": "text",
-                "text": base,
-                "cache_control": {"type": "ephemeral"},
-            },
-            {
-                "type": "text",
-                "text": unit_part,
-            },
+            {"type": "text", "text": base, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": unit_part},
         ],
     }]
 
-    # Streaming verplicht voor grote outputs. Retry bij rate limit (8k tokens/min org-limiet):
-    # na een parallelle batch is het budget op — wacht 60s zodat het venster reset.
-    print(f"[INFO] Genereer unit '{args.unit}' voor: {args.company} (streaming)")
     MAX_RATE_RETRIES = 5
     raw_output = ""
-    response = None
+    response   = None
     for attempt in range(1, MAX_RATE_RETRIES + 1):
         try:
             chunks: list[str] = []
             with client.messages.stream(
-                model=model,
-                max_tokens=max_tokens,
+                model=model, max_tokens=max_tokens,
                 messages=messages_payload,
             ) as stream:
                 for text in stream.text_stream:
@@ -531,7 +337,7 @@ def main():
         except Exception as e:
             if "rate_limit" in str(e).lower() and attempt < MAX_RATE_RETRIES:
                 wait = 60 * attempt
-                print(f"[WARN] Rate limit (poging {attempt}/{MAX_RATE_RETRIES}) — wacht {wait}s")
+                print(f"[WARN] Rate limit (poging {attempt}) — wacht {wait}s")
                 time.sleep(wait)
             else:
                 raise
@@ -539,36 +345,29 @@ def main():
     if not raw_output:
         raise RuntimeError("Lege output teruggekregen")
 
+    out_path = Path(args.out)
     write_text(out_path, raw_output)
 
-    usage = getattr(response, "usage", None)
+    usage       = getattr(response, "usage", None)
     cache_read  = getattr(usage, "cache_read_input_tokens",  0) or 0
     cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
-
     meta = {
-        "model": model,
-        "briefing_file": str(briefing_path),
-        "output_file": str(out_path),
-        "unit": args.unit,
+        "model": model, "unit": args.unit,
         "stop_reason": getattr(response, "stop_reason", None),
         "usage": {
-            "input_tokens":               getattr(usage, "input_tokens",  None) if usage else None,
-            "output_tokens":              getattr(usage, "output_tokens", None) if usage else None,
-            "cache_read_input_tokens":    cache_read,
+            "input_tokens":                getattr(usage, "input_tokens",  None) if usage else None,
+            "output_tokens":               getattr(usage, "output_tokens", None) if usage else None,
+            "cache_read_input_tokens":     cache_read,
             "cache_creation_input_tokens": cache_write,
         },
     }
+    write_text(out_path.with_suffix(".meta.json"),
+               json.dumps(meta, indent=2, ensure_ascii=False))
 
-    meta_path = out_path.with_suffix(".meta.json")
-    write_text(meta_path, json.dumps(meta, indent=2, ensure_ascii=False))
-
-    print(f"[OK] Raw output opgeslagen in: {out_path}")
-    print(f"[OK] Metadata opgeslagen in: {meta_path}")
+    print(f"[OK] Raw output: {out_path}")
     print(f"[INFO] stop_reason: {meta['stop_reason']}")
-    if cache_read:
-        print(f"[INFO] Cache hit: {cache_read} tokens gelezen uit cache")
-    if cache_write:
-        print(f"[INFO] Cache write: {cache_write} tokens gecached")
+    if cache_read:  print(f"[INFO] Cache hit: {cache_read} tokens")
+    if cache_write: print(f"[INFO] Cache write: {cache_write} tokens")
 
 
 if __name__ == "__main__":

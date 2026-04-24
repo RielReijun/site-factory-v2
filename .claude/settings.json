@@ -5,5 +5,14 @@
       "args": ["/home/ryan-poser/site-factory/scripts/mcp_server.py"],
       "env": {}
     }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)"
+    ]
   }
 }

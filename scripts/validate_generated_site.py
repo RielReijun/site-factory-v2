@@ -251,8 +251,11 @@ def validate_site(site_dir: Path) -> dict:
     all_issues.extend(structure_issues)
     missing_files = [i[1] for i in structure_issues]
 
-    # 2. Per HTML-bestand
-    html_files = [f for f in sorted(site_dir.glob("*.html")) if not f.name.startswith("_")]
+    # 2. Per HTML-bestand — ook subdirectories (Next.js /out: about/index.html)
+    html_files = [
+        f for f in sorted(site_dir.rglob("*.html"))
+        if not f.name.startswith("_") and "_next" not in str(f)
+    ]
 
     for html_path in html_files:
         content = html_path.read_text(encoding="utf-8", errors="ignore")
