@@ -1142,6 +1142,9 @@ def main():
 
         n += len(page_units)
 
+        # Nog een keer Lucide icons fixen — pages worden na layout gegenereerd
+        _fix_lucide_icons(project_dir)
+
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
         if not step_build_nextjs(project_dir, n, total, company_name):
