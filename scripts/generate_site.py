@@ -236,12 +236,25 @@ Genereer ALLEEN dit bestand:
 ===END_FILE===
 
 ## Eisen
-- Tailwind directives: @tailwind base/components/utilities
-- `@plugin "@tailwindcss/typography"; @plugin "@tailwindcss/forms";` toevoegen na de directives
-- CSS custom properties voor brand-kleuren (uit briefing)
-- Subtiele typografie-verbeteringen (font smoothing, line-height)
-- shadcn CSS variabelen worden al automatisch toegevoegd — schrijf ze NIET over
-- Maximaal 60 regels
+- EERSTE regel: `@import "tailwindcss";` (Tailwind v4 syntax — NOOIT @tailwind base/components/utilities)
+- Plugins toevoegen: `@plugin "@tailwindcss/typography";` en `@plugin "@tailwindcss/forms";`
+- Font theme (Tailwind v4 stijl):
+  ```css
+  @theme { --font-heading: var(--font-JOUW_HEADING_FONT); --font-sans: var(--font-JOUW_BODY_FONT); }
+  ```
+- Brand-kleuren als CSS custom properties (exacte hex-waarden uit briefing)
+- shadcn CSS variabelen (HSL-waarden passend bij de brandkleuren):
+  ```css
+  :root {
+    --background: ...; --foreground: ...;
+    --primary: ...; --primary-foreground: ...;
+    --card: ...; --card-foreground: ...;
+    --muted: ...; --muted-foreground: ...;
+    --border: ...; --radius: 0.375rem;
+  }
+  ```
+- @layer base: scroll-behavior smooth, body font + kleur, ::selection
+- Maximaal 70 regels
 """
 
     raise ValueError(f"Onbekende unit: {unit}")
