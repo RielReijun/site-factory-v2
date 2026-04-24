@@ -329,6 +329,62 @@ def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prosp
     return True
 
 
+def _fix_globals_css(project_dir: Path) -> None:
+    """
+    Vervang Tailwind v3 syntax in globals.css door v4.
+    Claude genereert keer op keer @tailwind base/components/utilities,
+    maar Next.js 16 gebruikt Tailwind v4 waar alleen @import werkt.
+    Dit is een deterministische post-processing stap.
+    """
+    css_path = project_dir / "src" / "app" / "globals.css"
+    if not css_path.exists():
+        return
+
+    css = css_path.read_text(encoding="utf-8")
+
+    # Vervang v3 directives door v4 import (één keer, bovenaan)
+    has_import = "@import" in css and "tailwindcss" in css
+    has_v3     = "@tailwind base" in css or "@tailwind components" in css or "@tailwind utilities" in css
+
+    if has_v3 and not has_import:
+        # Verwijder alle @tailwind regels
+        css = re.sub(r'@tailwind\s+\w+;\s*\n?', '', css)
+        # Voeg v4 import bovenaan toe
+        css = '@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n' + css.lstrip()
+        css_path.write_text(css, encoding="utf-8")
+        log("[OK]  globals.css gepatcht: @tailwind → @import tailwindcss (v4)")
+    elif not has_v3 and not has_import:
+        # Helemaal geen Tailwind directives — toevoegen
+        css_path.write_text('@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n' + css, encoding="utf-8")
+        log("[OK]  globals.css: Tailwind v4 import toegevoegd")
+
+    # Zorg dat shadcn variabelen aanwezig zijn (minimal set)
+    css = css_path.read_text(encoding="utf-8")
+    if "--background" not in css and "--primary" not in css:
+        shadcn_vars = """
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 10%;
+    --primary: 220 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 95%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 220 20% 95%;
+    --muted-foreground: 220 10% 45%;
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 220 70% 50%;
+    --radius: 0.375rem;
+  }
+}
+"""
+        css_path.write_text(css + shadcn_vars, encoding="utf-8")
+        log("[INFO] globals.css: fallback shadcn variabelen toegevoegd")
+
+
 def _create_ui_components(project_dir: Path) -> None:
     """Schrijf essentiële shadcn-compatibele UI-componenten direct naar src/components/ui/."""
     lib_dir = project_dir / "src" / "lib"
@@ -945,6 +1001,9 @@ def main():
         if not ok:
             write_status(running=False, prospect=company_name, step="generate:layout", result="failed")
             sys.exit(1)
+
+        # Patch globals.css na layout-generatie (Tailwind v3→v4 fix)
+        _fix_globals_css(project_dir)
 
         # ── Fase 2: homepage ─────────────────────────────────────────────────
         n += 1
