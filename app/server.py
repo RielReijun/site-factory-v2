@@ -111,7 +111,15 @@ def get_prospect_costs(p: dict) -> list[dict]:
                 "cost":          calc_cost(model, in_tok, out_tok),
             })
 
+    # Bepaal of het een Next.js site is — dan oude HTML-units overslaan
+    is_nextjs    = (OUTPUT_DIR / f"{slug}-next" / "out" / "index.html").exists()
+    html_units   = {"home-html", "styles", "scripts"}  # alleen in oude HTML-pipeline
+
     for meta_file in sorted(OUTPUT_DIR.glob(f"{slug}-*.meta.json")):
+        unit = meta_file.name.replace(f"{slug}-", "", 1).replace(".meta.json", "")
+        # Skip HTML-units als we een Next.js site hebben
+        if is_nextjs and unit in html_units:
+            continue
         m = _read_meta(meta_file)
         if not m:
             continue
@@ -119,7 +127,6 @@ def get_prospect_costs(p: dict) -> list[dict]:
         usage   = m.get("usage", {})
         in_tok  = usage.get("input_tokens")  or 0
         out_tok = usage.get("output_tokens") or 0
-        unit    = meta_file.name.replace(f"{slug}-", "", 1).replace(".meta.json", "")
         costs.append({
             "step":          f"Genereer: {unit}",
             "model":         model,
@@ -155,7 +162,14 @@ def enrich_prospect(p: dict) -> dict:
     # Kosten samenvatten voor kaartweergave
     costs      = get_prospect_costs(p)
     total_cost = sum(c["cost"] for c in costs)
-    page_count = len(list(site_dir.glob("*.html"))) if site_dir.is_dir() else 0
+    # Next.js /out heeft pagina's in subdirs (over-ons/index.html) — gebruik rglob
+    if site_dir.is_dir():
+        page_count = len([
+            f for f in site_dir.rglob("index.html")
+            if "_next" not in str(f) and "_not-found" not in str(f)
+        ])
+    else:
+        page_count = 0
 
     return {
         **p,
