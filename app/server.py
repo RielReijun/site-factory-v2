@@ -131,10 +131,18 @@ def get_prospect_costs(p: dict) -> list[dict]:
     return costs
 
 
+def _find_site_dir(slug: str) -> Path:
+    """Zoek de gegenereerde site-map: Next.js /out heeft voorrang, dan klassieke -site."""
+    nextjs_out = OUTPUT_DIR / f"{slug}-next" / "out"
+    if nextjs_out.is_dir() and (nextjs_out / "index.html").exists():
+        return nextjs_out
+    return OUTPUT_DIR / f"{slug}-site"
+
+
 def enrich_prospect(p: dict) -> dict:
     """Voeg afgeleide velden toe voor het dashboard."""
     slug     = slugify(p.get("name", ""))
-    site_dir = OUTPUT_DIR / f"{slug}-site"
+    site_dir = _find_site_dir(slug)
 
     stages = {
         "collect":  p.get("status") == "collected",
@@ -1138,7 +1146,7 @@ def api_chat():
 
 @app.get("/sites/<slug>/")
 def serve_site_index(slug):
-    site_dir = OUTPUT_DIR / f"{slug}-site"
+    site_dir = _find_site_dir(slug)
     if not site_dir.exists():
         abort(404)
     return send_from_directory(str(site_dir), "index.html")
@@ -1146,7 +1154,7 @@ def serve_site_index(slug):
 
 @app.get("/sites/<slug>/<path:filename>")
 def serve_site_file(slug, filename):
-    site_dir = OUTPUT_DIR / f"{slug}-site"
+    site_dir = _find_site_dir(slug)
     if not site_dir.exists():
         abort(404)
     return send_from_directory(str(site_dir), filename)
