@@ -134,6 +134,57 @@ def extract_nav_structure(soup: BeautifulSoup) -> list[str]:
     return [x for x in items if not (x in seen or seen.add(x))]
 
 
+def extract_logo_url(soup: BeautifulSoup, base_url: str) -> str | None:
+    """
+    Zoek het logo van de site in volgorde van betrouwbaarheid:
+    1. JSON-LD schema:Organization / schema:logo
+    2. <link rel="apple-touch-icon"> of <link rel="icon">
+    3. <img> met 'logo' in class, id of alt
+    4. <img> met 'logo' in src-pad
+    5. Eerste <img> in <header> of <nav>
+    """
+    from urllib.parse import urljoin
+
+    # 1. JSON-LD
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                logo = item.get("logo") or item.get("image")
+                if isinstance(logo, dict):
+                    logo = logo.get("url") or logo.get("contentUrl")
+                if isinstance(logo, str) and logo.startswith("http"):
+                    return logo
+        except Exception:
+            pass
+
+    # 2. Apple touch icon / favicon (vaak het beste logo-equivalent)
+    for rel in ("apple-touch-icon", "shortcut icon", "icon"):
+        tag = soup.find("link", rel=lambda r: r and rel in (r if isinstance(r, list) else [r]))
+        if tag and tag.get("href"):
+            return urljoin(base_url, tag["href"])
+
+    # 3. <img class/id/alt bevat 'logo'>
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        cls = " ".join(img.get("class", []))
+        alt = img.get("alt", "")
+        img_id = img.get("id", "")
+        if any("logo" in x.lower() for x in [cls, alt, img_id, src]):
+            if src:
+                return urljoin(base_url, src)
+
+    # 4. Eerste <img> in <header>
+    header = soup.find("header")
+    if header:
+        img = header.find("img")
+        if img and img.get("src"):
+            return urljoin(base_url, img["src"])
+
+    return None
+
+
 def extract_social_links(soup: BeautifulSoup) -> dict[str, str]:
     """Haal social media links op uit de pagina."""
     platforms = {
@@ -492,6 +543,24 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
     }
 
     save_file(target_dir / "meta.json", json.dumps(meta, indent=2, ensure_ascii=False))
+
+    # Logo opsporen en downloaden
+    if homepage_html:
+        _hp_soup = BeautifulSoup(homepage_html, "lxml")
+        logo_url = extract_logo_url(_hp_soup, start_url)
+        if logo_url:
+            try:
+                r = session.get(logo_url, headers=HEADERS, timeout=10)
+                r.raise_for_status()
+                ext = Path(urlparse(logo_url).path).suffix.lower() or ".png"
+                if ext not in {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"}:
+                    ext = ".png"
+                logo_path = target_dir / f"logo{ext}"
+                logo_path.write_bytes(r.content)
+                structured["logo"] = str(logo_path.relative_to(target_dir))
+                print(f"[OK] Logo opgeslagen: logo{ext} ({len(r.content)} bytes) — {logo_url}")
+            except Exception as e:
+                print(f"[WARN] Logo downloaden mislukt: {e}")
 
     # Structured data opslaan
     save_file(

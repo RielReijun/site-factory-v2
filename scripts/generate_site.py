@@ -138,10 +138,15 @@ Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevr
 
 def build_unit_part(unit: str, ref_tsx: str = "",
                     page_slug: str = "", page_title: str = "",
-                    page_desc: str = "") -> str:
+                    page_desc: str = "", logo_path: str = "") -> str:
 
     if unit == "layout":
-        return """
+        logo_instruction = (
+            f"\n- Logo beschikbaar op `/{logo_path}` — gebruik dit in de header als `<img src=\"/{logo_path}\" alt=\"logo\" />`"
+            if logo_path else
+            "\n- Geen logo-bestand beschikbaar — gebruik de bedrijfsnaam als tekst-logo in de header"
+        )
+        return f"""
 ## Opdracht
 Genereer deze bestanden:
 
@@ -169,7 +174,8 @@ Genereer deze bestanden:
 
 ## Eisen Header.tsx
 - `"use client"` directive (heeft state voor mobile menu)
-- Logo/bedrijfsnaam links, navigatie rechts
+- Logo links:{logo_instruction}
+- Navigatie rechts
 - Mobiel hamburger menu met slide-in nav
 - Telefoonnummer als klikbare `tel:` link (indien in briefing)
 - Sticky met subtiele shadow na scrollen (`useEffect` + `scroll` event)
@@ -273,10 +279,12 @@ def build_prompt(briefing: str, company_name: str, unit: str,
                  ref_tsx: str = "", page_slug: str = "",
                  page_title: str = "", page_desc: str = "",
                  images: list[str] | None = None,
-                 nav_pages: list[str] | None = None) -> tuple[str, str]:
+                 nav_pages: list[str] | None = None,
+                 logo_path: str = "") -> tuple[str, str]:
     base      = common_rules(briefing, company_name, images=images, nav_pages=nav_pages)
     unit_part = build_unit_part(unit, ref_tsx=ref_tsx, page_slug=page_slug,
-                                page_title=page_title, page_desc=page_desc)
+                                page_title=page_title, page_desc=page_desc,
+                                logo_path=logo_path)
     return base, unit_part
 
 
@@ -301,6 +309,7 @@ def main():
     parser.add_argument("--page-desc",  default="")
     parser.add_argument("--image-manifest", default="")
     parser.add_argument("--nav-pages",  default="")
+    parser.add_argument("--logo-path",  default="", help="Relatief pad naar logo in public/ (bijv. logo.png)")
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -333,6 +342,7 @@ def main():
         ref_tsx=ref_tsx, page_slug=args.page_slug,
         page_title=args.page_title, page_desc=args.page_desc,
         images=images, nav_pages=nav_pages,
+        logo_path=args.logo_path,
     )
 
     UNIT_MAX_TOKENS = {

@@ -617,6 +617,7 @@ def _run_unit_buffered(
     page_slug: str, page_title: str, page_desc: str,
     image_manifest: Path | None, nav_pages: list[str] | None,
     project_dir: Path,
+    logo_path: str = "",
 ) -> tuple[bool, str, list[str]]:
     """Genereer + parse één unit in een thread. Returnt (ok, label, lines)."""
     label = page_slug or unit_key
@@ -637,6 +638,8 @@ def _run_unit_buffered(
         gen_cmd += ["--image-manifest", str(image_manifest)]
     if nav_pages:
         gen_cmd += ["--nav-pages", json.dumps(nav_pages)]
+    if logo_path:
+        gen_cmd += ["--logo-path", logo_path]
 
     MAX_RETRIES = 2
     for attempt in range(1, MAX_RETRIES + 2):
@@ -1001,6 +1004,31 @@ def main():
         # Kopieer afbeeldingen naar public/assets/
         copy_images_to_site(collected_path, project_dir / "public")
 
+        # Logo kopiëren naar public/logo.* (bekende locatie voor layout-prompt)
+        logo_src = None
+        sd_path  = collected_path / "structured_data.json"
+        if sd_path.exists():
+            try:
+                sd = json.loads(sd_path.read_text(encoding="utf-8"))
+                logo_rel = sd.get("logo")
+                if logo_rel:
+                    logo_src = collected_path / logo_rel
+            except Exception:
+                pass
+        if logo_src and logo_src.exists():
+            logo_dest = project_dir / "public" / f"logo{logo_src.suffix}"
+            import shutil as _shutil
+            _shutil.copy2(str(logo_src), str(logo_dest))
+            log(f"[OK]  Logo gekopieerd naar public/logo{logo_src.suffix}")
+
+        # Detecteer logo-pad voor layout-prompt
+        logo_path = ""
+        for ext in (".png", ".svg", ".jpg", ".jpeg", ".webp", ".gif"):
+            if (project_dir / "public" / f"logo{ext}").exists():
+                logo_path = f"logo{ext}"
+                log(f"[INFO] Logo gevonden: {logo_path}")
+                break
+
         # ── Fase 1: layout (header + footer + globals) ───────────────────────
         n += 1
         write_status(running=True, prospect=company_name, step="generate:layout", step_n=n, total=total)
@@ -1009,6 +1037,7 @@ def main():
             OUTPUT_DIR / f"{slug}-layout.txt",
             None, "", "", "",
             image_manifest, nav_routes, project_dir,
+            logo_path=logo_path,
         )
         for line in lines:
             log(line)
