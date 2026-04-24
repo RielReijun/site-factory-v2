@@ -231,6 +231,28 @@ Genereer ALLEEN dit bestand:
 - Mobile first, geen comments
 - Dek af: header, mobile nav, hero, cards, grids, buttons, forms, footer, page hero
 
+## Responsive layout — VERPLICHT voor elk tweekoloms-patroon
+Voor ELKE container die op mobiel `flex-direction: column` heeft en op desktop naast elkaar
+hoort te staan: voeg altijd een `@media (min-width: 768px)` breakpoint toe met `flex-direction: row`.
+Dit geldt voor: intro-secties, over-ons, dienst-kaarten, propositie-blokken, feature-rijen, team-secties.
+Patroon dat je ALTIJD moet volgen:
+```css
+.voorbeeld-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+@media (min-width: 768px) {
+  .voorbeeld-inner {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .voorbeeld-image { width: 42%; }
+  .voorbeeld-content { flex: 1; }
+}
+```
+Zonder dit breakpoint blijven secties op desktop onnodig gestapeld.
+
 ## Vaste afspraken voor open/active states — GEBRUIK ALTIJD EXACT DEZE KLASSEN
 - Mobiel nav open: `nav.is-open` (of het exacte nav-element met `.is-open`)
 - Dropdown open: `.nav-dropdown.is-open` of `.site-nav__dropdown.is-open`
