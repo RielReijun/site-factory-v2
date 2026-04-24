@@ -14,10 +14,9 @@ REQUIRED_FILES = [
     "index.html",
 ]
 
-EXPECTED_ASSET_FILES = [
-    "assets/css/style.css",
-    "assets/js/main.js",
-]
+# Next.js /out/ heeft geen assets/css/style.css of assets/js/main.js
+# CSS zit in _next/static/chunks/, JS is gehydrateerd via Next.js runtime
+EXPECTED_ASSET_FILES: list[str] = []
 
 # ── Regexes ───────────────────────────────────────────────────────────────────
 
@@ -46,7 +45,7 @@ CTA_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-EXTERNAL_PREFIXES = ("http://", "https://", "mailto:", "tel:", "javascript:")
+EXTERNAL_PREFIXES = ("http://", "https://", "mailto:", "tel:", "javascript:", "_next/")
 from config import MIN_HOMEPAGE_CHARS
 
 

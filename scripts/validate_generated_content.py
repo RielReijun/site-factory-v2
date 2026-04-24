@@ -34,8 +34,8 @@ def load_structured_data(collected_path: Path) -> dict:
 def get_all_html_text(site_dir: Path) -> str:
     """Combineer zichtbare tekst van alle HTML-bestanden."""
     parts = []
-    for html_path in sorted(site_dir.glob("*.html")):
-        if html_path.name.startswith("_"):
+    for html_path in sorted(site_dir.rglob("*.html")):
+        if html_path.name.startswith("_") or "_next" in str(html_path):
             continue
         parts.append(html_path.read_text(encoding="utf-8", errors="ignore"))
     return "\n".join(parts)
@@ -76,8 +76,8 @@ def check_contact_info(html_text: str, structured: dict) -> list[str]:
 
 def check_placeholders(site_dir: Path) -> list[str]:
     warnings = []
-    for html_path in sorted(site_dir.glob("*.html")):
-        if html_path.name.startswith("_"):
+    for html_path in sorted(site_dir.rglob("*.html")):
+        if html_path.name.startswith("_") or "_next" in str(html_path):
             continue
         content = html_path.read_text(encoding="utf-8", errors="ignore")
         for pattern in PLACEHOLDER_PATTERNS:
@@ -109,7 +109,11 @@ def check_briefing_pages(site_dir: Path, collected_path: Path) -> list[str]:
     page_re = re.compile(r'(\w[\w\-]*\.html)', re.IGNORECASE)
     expected_pages = page_re.findall(m.group(1))
 
-    existing = {f.name.lower() for f in site_dir.glob("*.html")}
+    # Next.js: pagina's zitten in subdirs (over-ons/index.html)
+    existing = {f.parent.name.lower() + ".html" if f.name == "index.html" and f.parent != site_dir
+                else f.name.lower()
+                for f in site_dir.rglob("*.html")
+                if "_next" not in str(f) and not f.name.startswith("_")}
     for page in expected_pages:
         if page.lower() not in existing:
             warnings.append(f"Verwachte pagina '{page}' ontbreekt in de gegenereerde site")

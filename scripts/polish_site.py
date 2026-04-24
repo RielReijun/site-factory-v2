@@ -60,7 +60,11 @@ def deduplicate_pages(site_dir: Path) -> list[str]:
     Behoudt de naam die het vaakst gelinkt wordt in andere HTML-bestanden, of anders
     de kortere kebab-case naam.
     """
-    html_files = [f for f in site_dir.glob("*.html") if not f.name.startswith("_")]
+    # rglob voor Next.js (pagina's in subdirs: over-ons/index.html)
+    html_files = [
+        f for f in site_dir.rglob("*.html")
+        if not f.name.startswith("_") and "_next" not in str(f)
+    ]
 
     # Groepeer op genormaliseerde naam
     groups: dict[str, list[Path]] = {}

@@ -73,7 +73,19 @@ def run(site_dir: Path, max_subpage_chars: int = 2500, css_tail_chars: int = 600
         return 0
 
     index_html = index_path.read_text(encoding="utf-8", errors="ignore")[:4000]
-    css_tail   = css_path.read_text(encoding="utf-8", errors="ignore")[-css_tail_chars:]
+
+    # CSS-context: lees uit _next/static/chunks/ (Next.js) of style.css (HTML pipeline)
+    css_context = ""
+    chunks_dir  = site_dir / "_next" / "static"
+    if chunks_dir.exists():
+        for f in sorted(chunks_dir.rglob("*.css"))[:3]:
+            try:
+                css_context += f.read_text(encoding="utf-8", errors="ignore")[:2000]
+            except Exception:
+                pass
+    if not css_context and css_path.exists():
+        css_context = css_path.read_text(encoding="utf-8", errors="ignore")[-css_tail_chars:]
+    css_tail = css_context[-css_tail_chars:]
 
     # Verzamel subpagina's — sla _ bestanden en legal/sitemap over
     skip = {"legal.html", "sitemap.html", "404.html"}
@@ -130,24 +142,34 @@ def run(site_dir: Path, max_subpage_chars: int = 2500, css_tail_chars: int = 600
     css_fix = re.sub(r'^```\w*\s*', '', css_fix, flags=re.MULTILINE)
     css_fix = re.sub(r'\s*```\s*$', '', css_fix, flags=re.MULTILINE)
 
-    injection = (
-        "\n\n/* ── Cohesion-pass overrides ──────────────────────────────────────── */\n"
+    # Injecteer als <style> block in ALLE HTML-bestanden (Next.js + statisch)
+    # Dit werkt ongeacht of er een apart CSS-bestand bestaat.
+    style_block = (
+        "\n<style>/* cohesion-pass overrides */\n"
         + css_fix.strip()
-        + "\n"
+        + "\n</style>"
     )
-
-    current = css_path.read_text(encoding="utf-8", errors="ignore")
-    # Verwijder eerdere cohesion-pass block
-    current = re.sub(
-        r'\n\n/\* ── Cohesion-pass overrides.*?(?=\n\n/\*|\Z)',
-        '',
-        current,
-        flags=re.DOTALL,
-    )
-    css_path.write_text(current + injection, encoding="utf-8")
+    injected = 0
+    for html_path in sorted(site_dir.rglob("*.html")):
+        if html_path.name.startswith("_") or "_next" in str(html_path):
+            continue
+        try:
+            content = html_path.read_text(encoding="utf-8", errors="ignore")
+            # Verwijder vorige cohesion-pass block
+            content = re.sub(
+                r'\n<style>/\* cohesion-pass overrides \*/.*?</style>',
+                '', content, flags=re.DOTALL
+            )
+            new = re.sub(r"(</head>)", style_block + r"\n\1", content,
+                         flags=re.IGNORECASE, count=1)
+            if new != content:
+                html_path.write_text(new, encoding="utf-8")
+                injected += 1
+        except Exception:
+            pass
 
     lines = css_fix.count('\n') + 1
-    print(f"[OK]  cohesion_pass: {lines} regels CSS-overrides toegepast")
+    print(f"[OK]  cohesion_pass: {lines} regels CSS geïnjecteerd in {injected} HTML-bestanden")
     return lines
 
 

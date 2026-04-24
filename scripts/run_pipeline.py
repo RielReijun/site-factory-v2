@@ -831,39 +831,9 @@ def build_units(pages: list[dict]) -> list[tuple]:
     return units
 
 
-def _extract_header_footer(html: str) -> str:
-    """Extraheer <header> en <footer> uit homepage HTML als referentie voor subpagina's."""
-    header_match = re.search(r'<header[\s>].*?</header>', html, re.DOTALL | re.IGNORECASE)
-    footer_match = re.search(r'<footer[\s>].*?</footer>', html, re.DOTALL | re.IGNORECASE)
-    parts = []
-    if header_match:
-        parts.append("<!-- HEADER — gebruik exact deze structuur en class names -->")
-        parts.append(header_match.group(0))
-    if footer_match:
-        parts.append("<!-- FOOTER — gebruik exact deze structuur en class names -->")
-        parts.append(footer_match.group(0))
-    return "\n\n".join(parts)
-
-
-def collect_all_html_for_ref(site_dir: Path, max_chars: int = 30000) -> str:
-    """Combineer alle gegenereerde HTML bestanden als CSS-referentie voor styles-generatie."""
-    parts = []
-    total = 0
-    for html_file in sorted(site_dir.glob("*.html")):
-        try:
-            content = html_file.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        remaining = max_chars - total
-        if remaining <= 0:
-            break
-        if len(content) > remaining:
-            content = content[:remaining] + "\n<!-- afgekapt -->"
-        parts.append(f"<!-- === {html_file.name} === -->\n{content}")
-        total += len(content)
-        if total >= max_chars:
-            break
-    return "\n\n".join(parts)
+# _extract_header_footer en collect_all_html_for_ref verwijderd:
+# waren bedoeld voor HTML-pipeline (subpagina's kregen homepage-header als referentie).
+# In Next.js is de layout gedeeld via src/app/layout.tsx — niet nodig meer.
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -1158,8 +1128,8 @@ def main():
         log(f"[OK]  Statische export: {out_dir} ({len(list(out_dir.rglob('*.html')))} HTML-bestanden)")
 
     # ── validate_site → repair → re-validate ─────────────────────────────────
-    # Voor Next.js: validate/repair/polish draaien op de /out directory
-    validate_dir = out_dir if (project_dir / "out").exists() else site_dir
+    # validate/repair/polish draaien op de /out directory (statische HTML-export)
+    validate_dir = out_dir if out_dir.exists() else project_dir
 
     if from_idx <= STEPS.index("validate"):
         n += 1
