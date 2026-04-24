@@ -359,7 +359,7 @@ def section_contact(c: dict, variant: str = "with-form") -> tuple[str, set[str]]
     form_html = '''
               <form action="https://formspree.io/f/FORMSPREE_ID" method="POST" className="space-y-4">
                 <input type="hidden" name="_subject" value="Nieuw bericht via website" />
-                <input type="text" name="_gotcha" style={{{{ display: "none" }}}} />
+                <input type="text" name="_gotcha" style={{ display: "none" }} />
                 <div>
                   <label className="block text-sm font-medium mb-1.5">Naam</label>
                   <input type="text" name="name" required className="w-full border border-input bg-background rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />

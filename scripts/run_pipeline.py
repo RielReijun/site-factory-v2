@@ -316,6 +316,7 @@ def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prosp
     _run_in_project(
         ["npm", "install",
          "lucide-react",
+         "tailwindcss-animate",
          "@tailwindcss/typography",
          "@tailwindcss/forms"],
         "npm packages installeren (lucide + tailwind plugins)",
@@ -356,6 +357,38 @@ def _fix_lucide_icons(project_dir: Path) -> None:
             pass
     if fixed:
         log(f"[OK]  Lucide icon fix: {fixed} bestand(en) gecorrigeerd")
+
+
+def _fix_layout_tsx(project_dir: Path) -> None:
+    """
+    Repareer veelvoorkomende syntax-problemen in layout.tsx:
+    - Kapotte className met backtick/template literal remnants
+    - darkMode: ['class'] → darkMode: 'class' in tailwind.config.ts
+    """
+    layout = project_dir / "src" / "app" / "layout.tsx"
+    if layout.exists():
+        try:
+            c = layout.read_text(encoding="utf-8")
+            # Fix backtick remnants in JSX attributes
+            fixed = re.sub(r'className="[^"]*`\}?>', 'className="">', c)
+            fixed = re.sub(r'className=\{[^}]*`[^}]*\}>', 'className="">', fixed)
+            if fixed != c:
+                layout.write_text(fixed, encoding="utf-8")
+                log("[OK]  layout.tsx: className syntax gerepareerd")
+        except Exception:
+            pass
+
+    # Fix darkMode config in tailwind.config.ts
+    tc = project_dir / "tailwind.config.ts"
+    if tc.exists():
+        try:
+            c = tc.read_text(encoding="utf-8")
+            fixed = re.sub(r'darkMode:\s*\[["\']class["\']\]', 'darkMode: "class"', c)
+            if fixed != c:
+                tc.write_text(fixed, encoding="utf-8")
+                log("[OK]  tailwind.config.ts: darkMode syntax gerepareerd")
+        except Exception:
+            pass
 
 
 _INVALID_STYLE_PROPS = re.compile(
@@ -1139,6 +1172,9 @@ def main():
 
         # Fix hallucinated Lucide icons die niet bestaan
         _fix_lucide_icons(project_dir)
+
+        # Fix veelvoorkomende layout.tsx syntax-problemen
+        _fix_layout_tsx(project_dir)
 
         # ── Fase 2: homepage via component registry ───────────────────────────
         n += 1
