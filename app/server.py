@@ -362,7 +362,8 @@ def api_pages(slug):
     for p in load_prospects():
         if slugify(p.get("name", "")) != slug:
             continue
-        site_dir = OUTPUT_DIR / f"{slug}-site"
+        site_dir       = _find_site_dir(slug)
+        is_nextjs      = (OUTPUT_DIR / f"{slug}-next" / "out" / "index.html").exists()
         collected_path = p.get("collected_path")
 
         pages = []
@@ -377,12 +378,28 @@ def api_pages(slug):
                 except Exception:
                     pass
 
+        def _page_label(file: str) -> str:
+            """Toon route (/over-ons/) voor Next.js, bestandsnaam voor HTML."""
+            if not is_nextjs:
+                return file
+            slug_part = file.replace(".html", "")
+            return "/" if slug_part == "index" else f"/{slug_part}/"
+
+        def _page_exists(file: str) -> bool:
+            if is_nextjs:
+                slug_part = file.replace(".html", "")
+                route_dir = site_dir / slug_part
+                return (site_dir / "index.html").exists() if slug_part == "index" \
+                       else (route_dir / "index.html").exists()
+            return (site_dir / file).exists()
+
         all_pages = [{"file": "index.html", "title": "Homepage", "description": "Hoofdpagina"}] + pages
         result = []
         for page in all_pages:
             result.append({
                 **page,
-                "exists": (site_dir / page["file"]).exists(),
+                "file":   _page_label(page["file"]),
+                "exists": _page_exists(page["file"]),
             })
 
         overflow_result = []
