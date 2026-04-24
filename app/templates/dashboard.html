@@ -888,6 +888,71 @@
       .stages { flex-wrap: wrap; }
     }
 
+    /* ── Multiselect ─────────────────────────────────── */
+
+    .card-cb {
+      position: absolute;
+      top: 12px; left: 12px;
+      width: 18px; height: 18px;
+      accent-color: var(--accent);
+      cursor: pointer;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+    .prospect-card:hover .card-cb,
+    .prospect-card.selected .card-cb { opacity: 1; }
+    .prospect-card.selected {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      background: rgba(99,102,241,.06);
+    }
+
+    .bulk-bar {
+      position: fixed;
+      bottom: 92px;
+      left: 50%;
+      transform: translateX(-50%) translateY(16px);
+      background: #1e2130;
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      box-shadow: 0 6px 32px rgba(0,0,0,.5);
+      z-index: 99;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s, transform .18s;
+      white-space: nowrap;
+    }
+    .bulk-bar.visible {
+      opacity: 1;
+      pointer-events: all;
+      transform: translateX(-50%) translateY(0);
+    }
+    .bulk-count {
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 24px;
+    }
+    .bulk-sep { width: 1px; height: 18px; background: var(--border); }
+    .bulk-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      font-size: 12px;
+      padding: 5px 11px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .bulk-btn:hover { border-color: var(--accent); background: rgba(99,102,241,.1); }
+    .bulk-btn.danger:hover { border-color: var(--red); background: rgba(239,68,68,.1); color: var(--red); }
+    .bulk-btn.close-btn { padding: 5px 8px; color: var(--muted); }
+
     /* ── Chat widget ──────────────────────────────────── */
 
     .chat-fab {
@@ -1067,6 +1132,18 @@
     <button class="filter-btn"        data-filter="done"         onclick="setFilter('done')">Klaar <span class="filter-count" id="fc-done">–</span></button>
     <button class="filter-btn"        data-filter="in-progress"  onclick="setFilter('in-progress')">Bezig <span class="filter-count" id="fc-in-progress">–</span></button>
     <button class="filter-btn"        data-filter="failed"       onclick="setFilter('failed')">Mislukt <span class="filter-count" id="fc-failed">–</span></button>
+    <button class="btn-sm primary" id="deploy-all-btn" onclick="deployAll(this)" title="Deploy alle prospects die klaar zijn maar nog niet live staan" style="margin-left:auto;display:none">▶ Deploy alle klare</button>
+  </div>
+
+  <!-- Bulk-actiebalk -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-count" id="bulk-count">0</span> geselecteerd
+    <div class="bulk-sep"></div>
+    <button class="bulk-btn" onclick="bulkDeploy()">▶ Deploy</button>
+    <button class="bulk-btn danger" onclick="bulkTrash()">🗑 Verwijder</button>
+    <div class="bulk-sep"></div>
+    <button class="bulk-btn" onclick="selectAllVisible()">Selecteer alles</button>
+    <button class="bulk-btn close-btn" onclick="clearSelection()" title="Deselecteer">✕</button>
   </div>
 
   <div id="prospects-container">
@@ -1907,8 +1984,10 @@ function render(prospects) {
       : '';
 
     return `
-      <div class="prospect-card ${statusClass}" id="card-${p.slug}" data-filter="${filterKey}"
+      <div class="prospect-card ${statusClass}" id="card-${p.slug}" data-filter="${filterKey}" style="position:relative"
            onclick="openModal(event,'${p.slug}','${esc(p.name)}','${esc(p.url)}')">
+        <input type="checkbox" class="card-cb" id="cb-${p.slug}"
+               onclick="event.stopPropagation();toggleSelect('${p.slug}',this)">
         <div class="card-top">
           <div class="card-info">
             <div class="prospect-name">${esc(p.name)}</div>
@@ -1945,6 +2024,15 @@ function render(prospects) {
 
   // Actieve filter toepassen
   applyFilter();
+  // Bulk-state herstellen na re-render
+  selectedSlugs.forEach(slug => {
+    const card = document.getElementById('card-' + slug);
+    const cb   = document.getElementById('cb-' + slug);
+    if (card) card.classList.add('selected');
+    if (cb)   cb.checked = true;
+  });
+  updateBulkBar();
+  _updateDeployAllBtn();
 }
 
 function esc(str) {
@@ -2194,6 +2282,120 @@ setInterval(loadProspects, 30000);
 setInterval(loadTrash,     60000);
 setInterval(pollStatus,     2000);
 setInterval(loadUsage,     60000);
+</script>
+
+<!-- ── Multiselect + bulk acties ────────────────────────────────────── -->
+<script>
+const selectedSlugs = new Set();
+
+function toggleSelect(slug, cb) {
+  if (cb.checked) {
+    selectedSlugs.add(slug);
+    document.getElementById('card-' + slug)?.classList.add('selected');
+  } else {
+    selectedSlugs.delete(slug);
+    document.getElementById('card-' + slug)?.classList.remove('selected');
+  }
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar   = document.getElementById('bulk-bar');
+  const count = document.getElementById('bulk-count');
+  const n     = selectedSlugs.size;
+  count.textContent = n;
+  bar.classList.toggle('visible', n > 0);
+}
+
+function clearSelection() {
+  selectedSlugs.forEach(slug => {
+    document.getElementById('card-' + slug)?.classList.remove('selected');
+    const cb = document.getElementById('cb-' + slug);
+    if (cb) cb.checked = false;
+  });
+  selectedSlugs.clear();
+  updateBulkBar();
+}
+
+function selectAllVisible() {
+  document.querySelectorAll('.prospect-card:not([style*="display: none"]):not([style*="display:none"])').forEach(card => {
+    const slug = card.id.replace('card-', '');
+    if (!slug) return;
+    selectedSlugs.add(slug);
+    card.classList.add('selected');
+    const cb = document.getElementById('cb-' + slug);
+    if (cb) cb.checked = true;
+  });
+  updateBulkBar();
+}
+
+async function bulkTrash() {
+  if (selectedSlugs.size === 0) return;
+  const names = [...selectedSlugs].map(s => {
+    const card = document.getElementById('card-' + s);
+    return card?.querySelector('.prospect-name')?.textContent || s;
+  });
+  if (!confirm(`${selectedSlugs.size} prospect(s) verwijderen?\n\n${names.join('\n')}`)) return;
+
+  const slugs = [...selectedSlugs];
+  clearSelection();
+  const res  = await fetch('/api/bulk-trash', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ slugs }),
+  });
+  const data = await res.json();
+  const failed = Object.entries(data.results || {}).filter(([,v]) => v !== 'ok');
+  if (failed.length) alert('Fout bij verwijderen: ' + failed.map(([s,e]) => `${s}: ${e}`).join('\n'));
+  loadProspects();
+  loadTrash();
+}
+
+async function bulkDeploy() {
+  if (selectedSlugs.size === 0) return;
+  const slugs = [...selectedSlugs].filter(slug => {
+    const btn = document.getElementById('deploy-btn-' + slug);
+    return btn !== null;  // alleen als er een deploy-knop zichtbaar is
+  });
+  if (slugs.length === 0) {
+    alert('Geen geselecteerde prospects hebben een deploy-knop (al deployed of nog niet klaar).');
+    return;
+  }
+  clearSelection();
+  await _deploySequential(slugs);
+}
+
+async function deployAll(btn) {
+  const slugs = [...document.querySelectorAll('[id^="deploy-btn-"]')]
+    .map(el => el.id.replace('deploy-btn-', ''));
+  if (slugs.length === 0) { alert('Geen klare prospects om te deployen.'); return; }
+  btn.disabled = true;
+  btn.textContent = `⟳ 0/${slugs.length} deployed...`;
+  await _deploySequential(slugs, (done, total) => {
+    btn.textContent = `⟳ ${done}/${total} deployed...`;
+  });
+  btn.textContent = `✓ ${slugs.length} deployed`;
+  setTimeout(() => { btn.disabled = false; btn.textContent = '▶ Deploy alle klare'; loadProspects(); }, 3000);
+}
+
+async function _deploySequential(slugs, onProgress) {
+  for (let i = 0; i < slugs.length; i++) {
+    const slug = slugs[i];
+    const btn  = document.getElementById('deploy-btn-' + slug);
+    if (btn) await triggerDeploy(slug, btn);
+    if (onProgress) onProgress(i + 1, slugs.length);
+    if (i < slugs.length - 1) await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+// Toon "Deploy alle klare" knop als er deploybare prospects zijn
+function _updateDeployAllBtn() {
+  const btn      = document.getElementById('deploy-all-btn');
+  const deployable = document.querySelectorAll('[id^="deploy-btn-"]').length;
+  if (btn) btn.style.display = deployable > 0 ? '' : 'none';
+}
+// Hook in op render — roep aan na elke render
+const _origRender = window.render;  // wordt hieronder overschreven als render al bestaat
 </script>
 
 <!-- ── Chat widget ───────────────────────────────────────────────────── -->

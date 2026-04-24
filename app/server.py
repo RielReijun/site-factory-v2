@@ -701,6 +701,52 @@ def api_delete_permanent(slug):
     abort(404)
 
 
+def _trash_one(slug: str) -> str:
+    """Core trash-logica; geeft 'ok' of een foutmelding terug."""
+    prospects = load_prospects()
+    for i, p in enumerate(prospects):
+        if slugify(p.get("name", "")) != slug:
+            continue
+        if p.get("status") == "trashed":
+            return "al in prullenbak"
+        now        = datetime.now(timezone.utc)
+        trash_name = f"{slug}_{now.strftime('%Y%m%dT%H%M%S')}"
+        trash_path = TRASH_DIR / trash_name
+        trash_path.mkdir(parents=True, exist_ok=True)
+        collected_path = p.get("collected_path")
+        if collected_path and Path(collected_path).exists():
+            shutil.move(collected_path, str(trash_path / "collected"))
+        site_dir = OUTPUT_DIR / f"{slug}-site"
+        if site_dir.exists():
+            shutil.move(str(site_dir), str(trash_path / "site"))
+        raw_files = (
+            list(OUTPUT_DIR.glob(f"{slug}-*.txt"))
+            + list(OUTPUT_DIR.glob(f"{slug}-*.meta.json"))
+            + list(OUTPUT_DIR.glob(f"{slug}-validation.json"))
+        )
+        if raw_files:
+            raw_dir = trash_path / "raw"
+            raw_dir.mkdir(exist_ok=True)
+            for f in raw_files:
+                shutil.move(str(f), str(raw_dir / f.name))
+        p["status"]     = "trashed"
+        p["trashed_at"] = now.isoformat()
+        p["trash_path"] = str(trash_path)
+        save_prospects(prospects)
+        return "ok"
+    return "niet gevonden"
+
+
+@app.post("/api/bulk-trash")
+def api_bulk_trash():
+    """Verplaats meerdere prospects tegelijk naar de prullenbak."""
+    slugs = (request.get_json(silent=True) or {}).get("slugs", [])
+    if not slugs:
+        return jsonify({"ok": False, "error": "Geen slugs opgegeven"}), 400
+    results = {slug: _trash_one(slug) for slug in slugs}
+    return jsonify({"ok": True, "results": results})
+
+
 @app.post("/api/prospects/<slug>/trash")
 def api_trash_prospect(slug):
     prospects = load_prospects()
