@@ -329,6 +329,35 @@ def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prosp
     return True
 
 
+_FAKE_LUCIDE_ICONS = {
+    "Instagram": "Camera", "Facebook": "Globe", "Twitter": "MessageCircle",
+    "Whatsapp": "MessageCircle", "WhatsApp": "MessageCircle", "TikTok": "Video",
+    "Pinterest": "Image", "Snapchat": "Camera", "Youtube": "Play",
+    "LinkedIn": "Briefcase", "Telegram": "Send",
+}
+
+
+def _fix_lucide_icons(project_dir: Path) -> None:
+    """Vervang niet-bestaande Lucide icons door geldige alternatieven."""
+    fixed = 0
+    for tsx in (project_dir / "src").rglob("*.tsx"):
+        try:
+            content = tsx.read_text(encoding="utf-8")
+            if "lucide-react" not in content:
+                continue
+            new = content
+            for fake, replacement in _FAKE_LUCIDE_ICONS.items():
+                if fake in new:
+                    new = re.sub(rf"\b{fake}\b", replacement, new)
+            if new != content:
+                tsx.write_text(new, encoding="utf-8")
+                fixed += 1
+        except Exception:
+            pass
+    if fixed:
+        log(f"[OK]  Lucide icon fix: {fixed} bestand(en) gecorrigeerd")
+
+
 def _fix_globals_css(project_dir: Path) -> None:
     """
     Vervang Tailwind v3 syntax in globals.css door v4.
@@ -1047,6 +1076,9 @@ def main():
 
         # Patch globals.css na layout-generatie (Tailwind v3→v4 fix)
         _fix_globals_css(project_dir)
+
+        # Fix hallucinated Lucide icons die niet bestaan
+        _fix_lucide_icons(project_dir)
 
         # ── Fase 2: homepage ─────────────────────────────────────────────────
         n += 1
