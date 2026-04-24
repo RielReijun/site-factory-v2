@@ -1667,6 +1667,9 @@ async function loadPages(pane) {
     const existing = pages.filter(p => p.exists).length;
     const missing  = pages.length - existing;
 
+    // Detecteer Next.js: route begint met / (bijv. /over-ons/)
+    const isNextJs = pages.some(p => p.file && p.file.startsWith('/'));
+
     const buildRow = (p, isOverflow = false) => {
       const statusHtml = isOverflow
         ? `<span class="status-dot" style="color:var(--muted)">— Optioneel</span>`
@@ -1674,24 +1677,22 @@ async function loadPages(pane) {
           ? `<span class="status-dot exists">✓ Gebouwd</span>`
           : `<span class="status-dot missing">○ Ontbreekt</span>`;
 
-      const pageUrl = p.file === 'index.html'
-        ? `/sites/${activeSlug}/`
-        : `/sites/${activeSlug}/${p.file}`;
+      // Next.js: route is al correct (/over-ons/), HTML: bouw pad op uit bestandsnaam
+      const pageUrl = isNextJs
+        ? `/sites/${activeSlug}${p.file === '/' ? '' : p.file}`
+        : (p.file === 'index.html' ? `/sites/${activeSlug}/` : `/sites/${activeSlug}/${p.file}`);
 
-      const actionHtml = (!isOverflow && p.exists)
-        ? `<div style="display:flex;gap:6px;justify-content:flex-end">
-             <a class="btn-sm primary" href="${pageUrl}" target="_blank">↗ Bekijk</a>
-             <button class="btn-sm" onclick="regeneratePage('${activeSlug}',${JSON.stringify(p)},this)">↺ Opnieuw</button>
-           </div>`
-        : (isOverflow && p.exists)
-          ? `<div style="display:flex;gap:6px;justify-content:flex-end">
-               <a class="btn-sm primary" href="${pageUrl}" target="_blank">↗ Bekijk</a>
-               <button class="btn-sm" onclick="regeneratePage('${activeSlug}',${JSON.stringify(p)},this)">↺ Opnieuw</button>
-             </div>`
+      // Next.js: geen individuele genereer-knoppen — hele site wordt in één keer gebouwd
+      const actionHtml = p.exists
+        ? `<a class="btn-sm primary" href="${pageUrl}" target="_blank">↗ Bekijk</a>`
+        : isNextJs
+          ? `<span style="color:var(--muted);font-size:11px">via pipeline</span>`
           : `<button class="btn-generate" id="gen-${esc(p.file)}" onclick="generatePage('${activeSlug}',${JSON.stringify(p)},this)">Genereer</button>`;
 
+      const fileLabel = isNextJs ? p.file : p.file;
+
       return `<tr style="${isOverflow ? 'opacity:0.7' : ''}">
-        <td><strong>${esc(p.file)}</strong><br><span style="color:var(--muted);font-size:11px">${esc(p.title)}</span></td>
+        <td><strong>${esc(fileLabel)}</strong><br><span style="color:var(--muted);font-size:11px">${esc(p.title)}</span></td>
         <td style="color:var(--muted);font-size:11px;max-width:220px">${esc(p.description||'')}</td>
         <td>${statusHtml}</td>
         <td style="text-align:right">${actionHtml}</td>
