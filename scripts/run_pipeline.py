@@ -678,6 +678,58 @@ def step_parse_unit(input_path: Path, out_dir: Path, n: int, total: int, prospec
     return run_cmd(cmd, f"parse:{input_path.stem}", n, total, prospect)
 
 
+def _plan_and_assemble(
+    briefing_path: Path, company_name: str,
+    page_slug: str, page_title: str, page_desc: str,
+    image_manifest: Path | None, nav_pages: list[str] | None,
+    project_dir: Path, is_homepage: bool = False,
+) -> tuple[bool, str, list[str]]:
+    """Plan een pagina met Claude (JSON), assembleer met component registry (geen code-generatie)."""
+    label = "home" if is_homepage else page_slug
+    lines = [f"\n{'─' * 60}", f"[UNIT] {label} (component registry)", f"{'─' * 60}"]
+
+    # Stap 1: genereer JSON-plan via Claude
+    plan_path = briefing_path.parent / f"{label}-plan.json"
+    plan_cmd  = [
+        "python", str(SCRIPTS_DIR / "plan_sections.py"),
+        "--brief",      str(briefing_path),
+        "--page-slug",  label,
+        "--page-title", page_title or label,
+        "--page-desc",  page_desc or "",
+        "--out",        str(plan_path),
+    ]
+    if image_manifest and image_manifest.exists():
+        plan_cmd += ["--image-manifest", str(image_manifest)]
+    if nav_pages:
+        plan_cmd += ["--nav-pages", json.dumps(nav_pages)]
+    if is_homepage:
+        plan_cmd.append("--homepage")
+
+    proc = subprocess.run(plan_cmd, cwd=str(SCRIPTS_DIR), capture_output=True, text=True)
+    lines.extend(proc.stdout.splitlines())
+    if proc.returncode != 0:
+        lines.append(f"[FAIL] plan_sections mislukt: {proc.stderr.strip()[:300]}")
+        return False, label, lines
+
+    # Stap 2: assembleer TSX via component registry (gratis, geen Claude-call)
+    try:
+        from component_registry import assemble_page
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        tsx  = assemble_page(plan, label, company_name)
+        if is_homepage:
+            dest = project_dir / "src" / "app" / "page.tsx"
+        else:
+            dest = project_dir / "src" / "app" / label / "page.tsx"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(tsx, encoding="utf-8")
+        lines.append(f"[OK]  {label}: {len(plan.get('sections', []))} secties geassembleerd → {dest.relative_to(project_dir)}")
+    except Exception as e:
+        lines.append(f"[FAIL] assembleren mislukt: {e}")
+        return False, label, lines
+
+    return True, label, lines
+
+
 def _run_unit_buffered(
     briefing_path: Path, company_name: str, unit_key: str,
     out_path: Path, ref_tsx: Path | None,
@@ -1088,14 +1140,13 @@ def main():
         # Fix hallucinated Lucide icons die niet bestaan
         _fix_lucide_icons(project_dir)
 
-        # ── Fase 2: homepage ─────────────────────────────────────────────────
+        # ── Fase 2: homepage via component registry ───────────────────────────
         n += 1
         write_status(running=True, prospect=company_name, step="generate:home", step_n=n, total=total)
-        ok, label, lines = _run_unit_buffered(
-            briefing_path, company_name, "home",
-            OUTPUT_DIR / f"{slug}-home.txt",
-            None, "", "", "",
-            image_manifest, nav_routes, project_dir,
+        ok, label, lines = _plan_and_assemble(
+            briefing_path, company_name,
+            "home", "Homepage", "Hoofdpagina van de site",
+            image_manifest, nav_routes, project_dir, is_homepage=True,
         )
         for line in lines:
             log(line)
@@ -1103,11 +1154,7 @@ def main():
             write_status(running=False, prospect=company_name, step="generate:home", result="failed")
             sys.exit(1)
 
-        # Gebruik homepage TSX als referentie voor subpagina's
-        home_tsx_path = project_dir / "src" / "app" / "page.tsx"
-        ref_tsx = home_tsx_path if home_tsx_path.exists() else None
-
-        # ── Fase 3: subpagina's parallel ─────────────────────────────────────
+        # ── Fase 3: subpagina's parallel via component registry ───────────────
         failed_units: list[str] = []
         batch_start = time.monotonic()
         write_status(running=True, prospect=company_name, step="generate:parallel", step_n=n, total=total)
@@ -1115,12 +1162,11 @@ def main():
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = {
                 executor.submit(
-                    _run_unit_buffered,
-                    briefing_path, company_name, "page",
-                    OUTPUT_DIR / f"{slug}-{ps}.txt",
-                    ref_tsx, ps, pt, pd,
+                    _plan_and_assemble,
+                    briefing_path, company_name,
+                    ps, pt, pd,
                     image_manifest, nav_routes,
-                    project_dir,
+                    project_dir, False,
                 ): ps
                 for _, _, ps, pt, pd in page_units
             }
