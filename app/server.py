@@ -1144,6 +1144,26 @@ def api_chat():
     )
 
 
+@app.get("/assets/<path:filename>")
+def serve_root_assets(filename):
+    """Afbeeldingen in Next.js public/ worden gevraagd vanaf /assets/ (root-relatief)."""
+    referer = request.headers.get("Referer", "")
+    m = re.search(r"/sites/([^/?#]+)", referer)
+    if m:
+        slug     = m.group(1)
+        site_dir = _find_site_dir(slug)
+        # Kijk in de project public/ map (naast /out)
+        project_dir = site_dir.parent if site_dir.name == "out" else site_dir
+        asset = project_dir / "public" / "assets" / filename
+        if asset.exists():
+            return send_from_directory(str(project_dir / "public" / "assets"), filename)
+        # Fallback: in /out zelf
+        asset2 = site_dir / "assets" / filename
+        if asset2.exists():
+            return send_from_directory(str(site_dir / "assets"), filename)
+    abort(404)
+
+
 @app.get("/_next/<path:filename>")
 def serve_nextjs_root_assets(filename):
     """
