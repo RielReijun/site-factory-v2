@@ -53,8 +53,17 @@ def common_rules(briefing: str, company_name: str,
         image_list = "\n".join(f"- {img}" for img in images)
         image_section = f"""
 ## Beschikbare afbeeldingen
-Gebruik deze echte afbeeldingen waar passend. Pad is relatief aan de projectroot (public/).
+Gebruik UITSLUITEND deze afbeeldingen — verzin GEEN andere bestandsnamen.
+Pad is relatief aan de projectroot (public/).
 {image_list}
+"""
+    else:
+        image_section = """
+## Geen afbeeldingen beschikbaar
+Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
+- CSS gradient achtergronden voor hero-secties (bijv. `bg-gradient-to-br from-[kleur] to-[kleur]`)
+- Emoji's of Lucide-iconen als visuele accenten
+- NOOIT `<img src="/bestandsnaam.jpg">` met verzonnen namen — die bestanden bestaan niet
 """
 
     default_nav = ["", "over-ons", "diensten", "contact"]
