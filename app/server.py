@@ -1144,6 +1144,23 @@ def api_chat():
     )
 
 
+@app.get("/_next/<path:filename>")
+def serve_nextjs_root_assets(filename):
+    """
+    Next.js static export vraagt assets op van /_next/ (root-relatief).
+    Gebruik de Referer header om te bepalen welke site de assets nodig heeft.
+    """
+    referer = request.headers.get("Referer", "")
+    m = re.search(r"/sites/([^/?#]+)", referer)
+    if m:
+        slug     = m.group(1)
+        site_dir = _find_site_dir(slug)
+        asset    = site_dir / "_next" / filename
+        if asset.exists():
+            return send_from_directory(str(site_dir / "_next"), filename)
+    abort(404)
+
+
 @app.get("/sites/<slug>/")
 def serve_site_index(slug):
     site_dir = _find_site_dir(slug)
