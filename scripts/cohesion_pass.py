@@ -29,6 +29,7 @@ Je krijgt de HTML van alle pagina's en de huidige CSS. Jouw taak:
    - **CTA-secties**: inconsistente achtergrondkleur, padding of knopstijl
    - **Typografie**: h1/h2/h3 die niet de homepage-stijl volgen
    - **Spacing**: secties met te veel of te weinig padding
+   - **Kaarten op donkere achtergrond**: cards met `background: white` of lichte kleur binnen een donkere section krijgen GEEN donkere tekstkleur via overerving — voeg expliciet `color: var(--color-text, #1a1a1a)` toe aan zulke kaarten en hun children (p, h3, h4)
 
 Regels:
 - Schrijf ALLEEN CSS — geen HTML, geen uitleg, geen code fences
