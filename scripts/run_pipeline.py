@@ -305,29 +305,50 @@ def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -
             log(f"[WARN] {label} mislukt (exit {proc.returncode}) — pipeline gaat door")
         return proc.returncode == 0
 
-    # Tailwind plugins
+    # Alle npm packages in één keer installeren (sneller, geen timing-issues)
     _run_in_project(
-        ["npm", "install", "--save-dev", "@tailwindcss/typography", "@tailwindcss/forms"],
-        "Tailwind plugins installeren",
+        ["npm", "install",
+         "lucide-react",
+         "@tailwindcss/typography",
+         "@tailwindcss/forms"],
+        "npm packages installeren (lucide + tailwind plugins)",
     )
 
-    # Lucide React
-    _run_in_project(["npm", "install", "lucide-react"], "Lucide React installeren")
-
-    # shadcn/ui init
-    _run_in_project(
-        ["npx", "--yes", "shadcn@latest", "init", "-y", "--base-color", "slate"],
-        "shadcn/ui initialiseren",
+    # shadcn/ui — gebruik canary voor Tailwind v4 ondersteuning (Next.js 16)
+    shadcn_ok = _run_in_project(
+        ["npx", "--yes", "shadcn@canary", "init", "-y", "--base-color", "slate"],
+        "shadcn/ui initialiseren (canary voor Tailwind v4)",
     )
+    if shadcn_ok:
+        _run_in_project(
+            ["npx", "--yes", "shadcn@canary", "add", "-y",
+             "accordion", "button", "card", "sheet", "badge", "separator"],
+            "shadcn componenten toevoegen",
+        )
+    else:
+        # Fallback: maak de ui-map aan met een simpele Button als fallback
+        ui_dir = project_dir / "src" / "components" / "ui"
+        ui_dir.mkdir(parents=True, exist_ok=True)
+        (ui_dir / "button.tsx").write_text(
+            '"use client";\n'
+            'import { cn } from "@/lib/utils";\n'
+            'export function Button({ className, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { className?: string }) {\n'
+            '  return <button className={cn("inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors", className)} {...props}>{children}</button>;\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        # lib/utils.ts voor cn()
+        lib_dir = project_dir / "src" / "lib"
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        (lib_dir / "utils.ts").write_text(
+            'import { type ClassValue, clsx } from "clsx";\nimport { twMerge } from "tailwind-merge";\n'
+            'export function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }\n',
+            encoding="utf-8",
+        )
+        _run_in_project(["npm", "install", "clsx", "tailwind-merge"], "clsx + tailwind-merge (cn util)")
+        log("[INFO] shadcn fallback: minimale ui/button.tsx aangemaakt")
 
-    # shadcn componenten die Claude altijd nodig heeft
-    _run_in_project(
-        ["npx", "--yes", "shadcn@latest", "add", "-y",
-         "accordion", "button", "card", "sheet", "badge", "separator", "navigation-menu"],
-        "shadcn componenten toevoegen",
-    )
-
-    log("[OK]  scaffold compleet: Next.js + Tailwind + shadcn/ui + Lucide")
+    log("[OK]  scaffold compleet: Next.js + Tailwind + Lucide + shadcn/ui")
     return True
 
 
