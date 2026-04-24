@@ -66,6 +66,16 @@ Gebruik deze echte afbeeldingen waar passend. Pad is relatief aan de projectroot
 Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
 Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
 {impeccable_section}{image_section}
+## Beschikbare libraries — gebruik deze altijd boven custom implementaties
+- **shadcn/ui**: `import {{ Accordion, AccordionItem, AccordionTrigger, AccordionContent }} from "@/components/ui/accordion"` — gebruik ALTIJD voor FAQ secties
+- **shadcn/ui**: `import {{ Card, CardHeader, CardTitle, CardContent }} from "@/components/ui/card"` — voor kaarten
+- **shadcn/ui**: `import {{ Button }} from "@/components/ui/button"` — voor alle knoppen/CTAs
+- **shadcn/ui**: `import {{ Sheet, SheetContent, SheetTrigger }} from "@/components/ui/sheet"` — voor mobiel nav
+- **shadcn/ui**: `import {{ Badge }} from "@/components/ui/badge"` — voor labels/tags
+- **Lucide React**: `import {{ Phone, Mail, MapPin, Clock, ChevronDown, Menu, X, Star, Check }} from "lucide-react"` — voor iconen
+- **Tailwind Typography**: `className="prose prose-lg max-w-none"` voor lange teksten (over-ons etc.)
+- **Tailwind Forms**: formuliervelden worden automatisch gestijld, geen extra klassen nodig
+
 ## Harde beperkingen
 - Gebruik UITSLUITEND Tailwind utility classes voor styling
 - Geen inline style= attributen behalve voor dynamische waarden
@@ -75,6 +85,7 @@ Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevr
 - Geen markdown in je output, geen uitleg — alleen bestanden
 - Voeg `"use client"` toe aan elk component dat hooks of event handlers gebruikt
 - Afbeeldingen: gebruik gewone `<img>` tags (geen next/image — statische export)
+- FAQ: gebruik ALTIJD shadcn Accordion — nooit custom div/button implementaties
 
 ## Technische eisen
 - TypeScript met eenvoudige types (geen complexe generics)
@@ -226,8 +237,10 @@ Genereer ALLEEN dit bestand:
 
 ## Eisen
 - Tailwind directives: @tailwind base/components/utilities
+- `@plugin "@tailwindcss/typography"; @plugin "@tailwindcss/forms";` toevoegen na de directives
 - CSS custom properties voor brand-kleuren (uit briefing)
 - Subtiele typografie-verbeteringen (font smoothing, line-height)
+- shadcn CSS variabelen worden al automatisch toegevoegd — schrijf ze NIET over
 - Maximaal 60 regels
 """
 

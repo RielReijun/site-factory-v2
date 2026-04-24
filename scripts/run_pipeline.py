@@ -277,20 +277,58 @@ def step_scaffold_nextjs(project_dir: Path, n: int, total: int, prospect: str) -
     if not ok:
         log(f"[FAIL] scaffold_nextjs mislukt (exit {process.returncode})")
     log(f"[INFO] Duur: {_fmt_duration(duration)}")
-    if ok:
-        # Schrijf next.config.ts met static export
-        config = (
-            'import type { NextConfig } from "next";\n\n'
-            'const nextConfig: NextConfig = {\n'
-            '  output: "export",\n'
-            '  trailingSlash: true,\n'
-            '  images: { unoptimized: true },\n'
-            '};\n\n'
-            'export default nextConfig;\n'
+    if not ok:
+        return False
+
+    # next.config.ts: static export
+    config = (
+        'import type { NextConfig } from "next";\n\n'
+        'const nextConfig: NextConfig = {\n'
+        '  output: "export",\n'
+        '  trailingSlash: true,\n'
+        '  images: { unoptimized: true },\n'
+        '};\n\n'
+        'export default nextConfig;\n'
+    )
+    (project_dir / "next.config.ts").write_text(config, encoding="utf-8")
+    log("[OK]  next.config.ts geschreven (output: export)")
+
+    def _run_in_project(cmd: list[str], label: str) -> bool:
+        log(f"[INFO] {label}...")
+        proc = subprocess.run(
+            cmd, cwd=str(project_dir),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
-        (project_dir / "next.config.ts").write_text(config, encoding="utf-8")
-        log("[OK]  next.config.ts geschreven (output: export)")
-    return ok
+        for line in proc.stdout.splitlines():
+            log(line)
+        if proc.returncode != 0:
+            log(f"[WARN] {label} mislukt (exit {proc.returncode}) — pipeline gaat door")
+        return proc.returncode == 0
+
+    # Tailwind plugins
+    _run_in_project(
+        ["npm", "install", "--save-dev", "@tailwindcss/typography", "@tailwindcss/forms"],
+        "Tailwind plugins installeren",
+    )
+
+    # Lucide React
+    _run_in_project(["npm", "install", "lucide-react"], "Lucide React installeren")
+
+    # shadcn/ui init
+    _run_in_project(
+        ["npx", "--yes", "shadcn@latest", "init", "-y", "--base-color", "slate"],
+        "shadcn/ui initialiseren",
+    )
+
+    # shadcn componenten die Claude altijd nodig heeft
+    _run_in_project(
+        ["npx", "--yes", "shadcn@latest", "add", "-y",
+         "accordion", "button", "card", "sheet", "badge", "separator", "navigation-menu"],
+        "shadcn componenten toevoegen",
+    )
+
+    log("[OK]  scaffold compleet: Next.js + Tailwind + shadcn/ui + Lucide")
+    return True
 
 
 def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
