@@ -122,12 +122,16 @@ def main():
         print("[WARN] ANTHROPIC_API_KEY ontbreekt — screenshot-validatie overgeslagen")
         sys.exit(0)
 
-    # Bepaal pagina's om te screenshotten (homepage altijd eerst)
-    html_files = sorted(site_dir.glob("*.html"))
-    priority   = ["index.html", "over-ons.html", "contact.html"]
-    ordered    = [site_dir / p for p in priority if (site_dir / p).exists()]
-    ordered   += [f for f in html_files if f not in ordered and not f.name.startswith("_")]
-    pages      = ordered[:args.max_pages]
+    # Bepaal pagina's om te screenshotten:
+    # - index.html altijd als eerste (de homepage is de visuele referentie)
+    # - daarna willekeurig uit de rest (subpagina's kunnen afwijkende styling hebben)
+    import random
+    html_files = [f for f in sorted(site_dir.glob("*.html")) if not f.name.startswith("_")]
+    index      = site_dir / "index.html"
+    rest       = [f for f in html_files if f != index]
+    random.shuffle(rest)
+    pages      = ([index] if index.exists() else []) + rest
+    pages      = pages[:args.max_pages]
 
     if not pages:
         print("[WARN] Geen HTML-pagina's gevonden")
