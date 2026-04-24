@@ -358,6 +358,29 @@ def _fix_lucide_icons(project_dir: Path) -> None:
         log(f"[OK]  Lucide icon fix: {fixed} bestand(en) gecorrigeerd")
 
 
+_INVALID_STYLE_PROPS = re.compile(
+    r',\s*(?:divideColor|divideWidth|divideOpacity|divideStyle|'
+    r'ringColor|ringWidth|ringOpacity|ringOffsetColor|ringOffsetWidth|'
+    r'gradientColorStops|placeholderColor|placeholderOpacity)\s*:[^,}]+'
+)
+
+
+def _fix_invalid_style_props(project_dir: Path) -> None:
+    """Verwijder Tailwind class names die per ongeluk als inline CSS properties gebruikt worden."""
+    fixed = 0
+    for tsx in (project_dir / "src").rglob("*.tsx"):
+        try:
+            content = tsx.read_text(encoding="utf-8")
+            new = _INVALID_STYLE_PROPS.sub("", content)
+            if new != content:
+                tsx.write_text(new, encoding="utf-8")
+                fixed += 1
+        except Exception:
+            pass
+    if fixed:
+        log(f"[OK]  TypeScript fix: {fixed} bestand(en) met ongeldige style-props gerepareerd")
+
+
 def _fix_globals_css(project_dir: Path) -> None:
     """
     Vervang Tailwind v3 syntax in globals.css door v4.
@@ -575,13 +598,28 @@ def _create_ui_components(project_dir: Path) -> None:
 
 
 def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
-    """Run npm run build in de Next.js projectdirectory."""
-    cmd = ["npm", "run", "build"]
-    # run_cmd draait vanuit SCRIPTS_DIR — we willen project_dir
+    """Run TypeScript check + npm run build in de Next.js projectdirectory."""
     log(f"\n{'─' * 60}")
     log(f"[STAP {n}/{total}] build_nextjs")
     log(f"{'─' * 60}")
     write_status(running=True, prospect=prospect, step="build_nextjs", step_n=n, total=total)
+
+    # TypeScript pre-check: vang fouten vroeg op zonder volledige build
+    ts_proc = subprocess.run(
+        ["npx", "tsc", "--noEmit", "--skipLibCheck"],
+        cwd=str(project_dir), capture_output=True, text=True,
+    )
+    if ts_proc.returncode != 0:
+        ts_errors = ts_proc.stdout + ts_proc.stderr
+        log("[WARN] TypeScript fouten gevonden — probeer auto-fix voor build")
+        for line in ts_errors.splitlines()[:10]:
+            log(f"  {line}")
+        # _fix_lucide_icons al gedaan, maar run nog een keer voor zekerheid
+        _fix_lucide_icons(project_dir)
+        # Fix invalid inline CSS properties (bijv. divideColor)
+        _fix_invalid_style_props(project_dir)
+
+    cmd = ["npm", "run", "build"]
     t0 = time.monotonic()
     process = subprocess.Popen(
         cmd, cwd=str(project_dir),

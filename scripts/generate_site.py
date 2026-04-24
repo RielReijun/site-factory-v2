@@ -296,12 +296,19 @@ def extract_response_text(response) -> str:
     return "\n".join(chunks).strip()
 
 
+def assemble_from_plan(plan_path: Path, page_slug: str, company_name: str) -> str:
+    """Assembleert TSX uit een JSON-sectieplan via de component registry."""
+    from component_registry import assemble_page
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    return assemble_page(plan, page_slug, company_name)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--brief",      required=True)
     parser.add_argument("--company",    required=True)
     parser.add_argument("--unit",       required=True,
-                        choices=["layout", "home", "page", "globals"])
+                        choices=["layout", "home", "page", "globals", "assembled"])
     parser.add_argument("--out",        required=True)
     parser.add_argument("--ref-tsx",    default="", help="Homepage TSX als referentie voor subpagina's")
     parser.add_argument("--page-slug",  default="")
@@ -336,6 +343,17 @@ def main():
             nav_pages = json.loads(args.nav_pages)
         except Exception:
             pass
+
+    # Voor assembled units: geen Claude-generatie, direct assemblen uit plan
+    if args.unit == "assembled":
+        plan_path = Path(args.brief).parent / f"{args.page_slug}-plan.json"
+        if not plan_path.exists():
+            raise FileNotFoundError(f"Plan niet gevonden: {plan_path}")
+        tsx = assemble_from_plan(plan_path, args.page_slug, args.company)
+        out_path = Path(args.out)
+        write_text(out_path, f"===FILE: src/app/{args.page_slug}/page.tsx===\n{tsx}\n===END_FILE===")
+        print(f"[OK] Assembled TSX: {out_path}")
+        return
 
     base, unit_part = build_prompt(
         briefing, args.company, args.unit,
