@@ -66,6 +66,28 @@ Gebruik onderstaande briefing om statische websitebestanden te genereren voor {c
 - Gebruik GEEN em-dashes (—) in lopende tekst, gebruik een komma, punt of nieuwe zin als dat natuurlijker klinkt
 - Zorg altijd voor voldoende contrast: witte tekst op donkere achtergrond minimaal `rgba(255,255,255,0.9)`, nooit lager dan 0.85. Donkere tekst op lichte achtergrond: gebruik `var(--color-text)` of `#1a1a1a`, nooit een muted kleur op een al lichte achtergrond.
 
+## Footer — ALTIJD deze vaste structuur
+```html
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-col footer-col--brand">...</div>
+      <div class="footer-col">...</div>
+      <!-- meer kolommen -->
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; <span id="footerYear"></span> Bedrijfsnaam. Alle rechten voorbehouden.</p>
+    </div>
+  </div>
+</footer>
+```
+Regels:
+- Container: ALTIJD `<footer class="site-footer">` met `<div class="container">` erbinnen
+- Grid: ALTIJD `<div class="footer-grid">` met kinderen `<div class="footer-col">`
+- Eerste kolom: ALTIJD `class="footer-col footer-col--brand"` (logo + tagline + adres)
+- Onderste balk: ALTIJD `<div class="footer-bottom">` met copyright en `id="footerYear"`
+- Geen `.footer-inner` wrapper — padding zit op `.site-footer` zelf via CSS
+
 ## Formulieren
 - Gebruik voor alle contactformulieren: `<form action="https://formspree.io/f/FORMSPREE_ID" method="POST">`
 - Voeg een hidden `<input type="hidden" name="_subject" value="Nieuw bericht via website">` toe

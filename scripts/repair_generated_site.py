@@ -776,13 +776,43 @@ def fix_faq_accordion(site_dir: Path) -> list[str]:
             css_path.write_text(css + FAQ_BUTTON_CSS, encoding="utf-8")
             fixes.append("FAQ button CSS-fix toegevoegd (grid-layout voor text+icon)")
 
-    # Stap 3: injecteer JS polyfill als die er nog niet in zit
+    # Stap 3: FAQ JS — zorg dat er precies één click-listener zit.
+    # Als initFaq aanwezig is, is de volledige polyfill (faq-fix) schadelijk:
+    # twee listeners → open→sluit onmiddellijk → FAQ werkt niet.
+    # Oplossing: verwijder de faq-fix polyfill als initFaq aanwezig is.
+    INIT_PATCH = """
+/* faq-init-patch: initialiseer maxHeight voor gesloten items (geen extra listener) */
+(function () {
+  document.querySelectorAll('.faq-item:not(.is-open) .faq-answer, .faq__item:not(.is-open) .faq__answer').forEach(function (a) {
+    if (!a.style.maxHeight) {
+      a.style.overflow  = 'hidden';
+      a.style.maxHeight = '0';
+      a.style.transition = 'max-height .3s ease';
+    }
+  });
+})();
+"""
     js_path = site_dir / "assets" / "js" / "main.js"
     if js_path.exists():
         js = js_path.read_text(encoding="utf-8", errors="ignore")
-        if "faq-fix" not in js:
-            js_path.write_text(js + "\n" + FAQ_JS_FIX, encoding="utf-8")
-            fixes.append("FAQ JS polyfill toegevoegd (class-mismatch + hidden-attribuut fix)")
+        has_init_faq = "function initFaq" in js or ("initFaq" in js and "faq-fix" not in js)
+
+        if "faq-fix" in js and has_init_faq:
+            # Verwijder de schadelijke dubbele polyfill
+            js = re.sub(
+                r'\n*/\* faq-fix:.*?}\)\(\);\n?',
+                '\n' + INIT_PATCH,
+                js, flags=re.DOTALL
+            )
+            js_path.write_text(js, encoding="utf-8")
+            fixes.append("FAQ dubbele listener gerepareerd (faq-fix vervangen door init-patch)")
+        elif "faq-fix" not in js and "faq-init-patch" not in js:
+            if has_init_faq:
+                js_path.write_text(js + INIT_PATCH, encoding="utf-8")
+                fixes.append("FAQ init-patch toegevoegd (maxHeight initialisatie zonder extra listener)")
+            else:
+                js_path.write_text(js + "\n" + FAQ_JS_FIX, encoding="utf-8")
+                fixes.append("FAQ JS polyfill toegevoegd (geen initFaq gevonden)")
 
     return fixes
 
@@ -869,6 +899,57 @@ KEUZE_LIGHT_BG_CSS = """
   color: rgba(255,255,255,0.9);
 }
 """
+
+
+FOOTER_FIX_CSS = """
+/* footer-fix: padding, gap en basis-stijling ongeacht class-name variaties */
+footer, .site-footer, [class*="footer"]:not([class*="footer-"]) {
+  padding-top: var(--space-xl, 3rem) !important;
+  padding-bottom: var(--space-lg, 2rem) !important;
+}
+/* Zorg dat footer-grid kinderen altijd zichtbaar zijn, ook bij class-mismatch */
+.footer-grid > * { min-width: 0; }
+/* footer-inner als wrapper ontbreekt: container pakt de padding over */
+.site-footer > .container, footer > .container {
+  padding-top: var(--space-xl, 3rem);
+  padding-bottom: var(--space-lg, 2rem);
+}
+/* Links in footer leesbaar */
+footer a, .site-footer a {
+  color: inherit;
+  opacity: 0.85;
+  text-decoration: none;
+}
+footer a:hover, .site-footer a:hover { opacity: 1; }
+/* Footer-bottom balk */
+.footer-bottom, [class*="footer-bottom"] {
+  margin-top: var(--space-lg, 2rem);
+  padding-top: var(--space-sm, 0.75rem);
+  border-top: 1px solid rgba(255,255,255,0.15);
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+"""
+
+
+def fix_footer(site_dir: Path) -> list[str]:
+    """Voeg footer-fix CSS toe als de footer padding of basisstijling mist."""
+    css_path = site_dir / "assets" / "css" / "style.css"
+    if not css_path.exists():
+        return []
+    css = css_path.read_text(encoding="utf-8", errors="ignore")
+    if "footer-fix" in css:
+        return []
+    # Alleen injecteren als er daadwerkelijk een footer in de HTML staat
+    html_files = list(site_dir.glob("*.html"))
+    has_footer  = any(
+        "<footer" in (f.read_text(encoding="utf-8", errors="ignore") if f.exists() else "")
+        for f in html_files[:3]
+    )
+    if not has_footer:
+        return []
+    css_path.write_text(css + FOOTER_FIX_CSS, encoding="utf-8")
+    return ["Footer-fix CSS toegevoegd (padding + links + footer-bottom)"]
 
 
 def fix_keuze_card_on_light_bg(site_dir: Path) -> list[str]:
@@ -970,6 +1051,7 @@ def run_one_pass(site_dir: Path, html_to_repair: list[Path]) -> tuple[int, int]:
         (fix_font_loading,           "font-loading"),
         (fix_favicon,                "favicon"),
         (fix_lazy_loading,           "lazy-loading"),
+        (fix_footer,                 "footer"),
         (fix_faq_accordion,          "faq-accordion"),
         (fix_low_contrast,           "low-contrast"),
         (fix_keuze_card_on_light_bg, "keuze-contrast"),
