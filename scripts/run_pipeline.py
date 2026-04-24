@@ -357,13 +357,16 @@ def step_validate_site(site_dir: Path, json_out: Path, n: int, total: int, prosp
     return run_cmd(cmd, "validate_site", n, total, prospect)
 
 
-def step_repair_site(site_dir: Path, json_out: Path, n: int, total: int, prospect: str) -> bool:
+def step_repair_site(site_dir: Path, json_out: Path, n: int, total: int, prospect: str,
+                     screenshot_json: Path | None = None) -> bool:
     cmd = [
         "python", str(SCRIPTS_DIR / "repair_generated_site.py"),
         "--site-dir", str(site_dir),
     ]
     if json_out.exists():
         cmd += ["--validation-json", str(json_out)]
+    if screenshot_json and screenshot_json.exists():
+        cmd += ["--screenshot-json", str(screenshot_json)]
     return run_cmd(cmd, "repair_site", n, total, prospect)
 
 
@@ -824,7 +827,22 @@ def main():
 
         # ── Screenshot-validatie: visuele problemen detecteren via Claude Vision ──
         n += 1
+        screenshot_json = site_dir / "screenshot_validation.json"
         step_screenshot_validate(site_dir, n, total, company_name)
+
+        # ── Screenshot-repair: pas visuele fixes toe als er issues zijn ──────────
+        if screenshot_json.exists():
+            try:
+                shot_data = json.loads(screenshot_json.read_text(encoding="utf-8"))
+                if shot_data.get("total_issues", 0) > 0:
+                    n += 1
+                    log(f"[INFO] {shot_data['total_issues']} visuele issue(s) gevonden — screenshot-repair uitvoeren...")
+                    step_repair_site(site_dir, json_out, n, total, company_name,
+                                     screenshot_json=screenshot_json)
+                else:
+                    log("[INFO] Geen visuele issues — screenshot-repair overgeslagen")
+            except Exception as e:
+                log(f"[WARN] Kon screenshot_validation.json niet lezen: {e}")
 
         # ── Polish: dedupliceer pagina's + herstel header-consistentie + demo-banner ──
         n += 1

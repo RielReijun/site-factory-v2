@@ -986,10 +986,93 @@ def run_one_pass(site_dir: Path, html_to_repair: list[Path]) -> tuple[int, int]:
     return total_file_fixes, len(site_wide_fixes)
 
 
+def fix_screenshot_issues(site_dir: Path, screenshot_json: Path) -> int:
+    """
+    Lees visuele issues uit screenshot_validation.json en injecteer
+    gerichte CSS-overrides via Claude. Geeft aantal fixes terug.
+    """
+    import os
+    try:
+        data = json.loads(screenshot_json.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] Kon screenshot JSON niet lezen: {e}")
+        return 0
+
+    all_issues = [i for page in data.get("results", []) for i in page.get("issues", [])]
+    if not all_issues:
+        print("[INFO] screenshot-repair: geen visuele issues om te fixen")
+        return 0
+
+    css_path = site_dir / "assets" / "css" / "style.css"
+    if not css_path.exists():
+        print("[WARN] screenshot-repair: style.css niet gevonden")
+        return 0
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("[WARN] screenshot-repair: ANTHROPIC_API_KEY ontbreekt")
+        return 0
+
+    from anthropic import Anthropic
+    client = Anthropic(api_key=api_key)
+    model  = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+    current_css  = css_path.read_text(encoding="utf-8", errors="ignore")
+    issues_text  = "\n".join(f"- {i}" for i in all_issues)
+
+    prompt = f"""Je bent een CSS-expert die visuele problemen repareert in een gegenereerde website.
+
+## Gevonden visuele problemen (via screenshot-analyse)
+{issues_text}
+
+## Huidige style.css (laatste 3000 tekens)
+```css
+{current_css[-3000:]}
+```
+
+## Opdracht
+Schrijf ALLEEN de minimale CSS-overrides die deze problemen oplossen.
+- Gebruik specifieke selectors die de bestaande stijlen overschrijven
+- Geen uitleg, geen commentaar, alleen CSS-regels
+- Begin direct met de CSS, geen code fences
+- Maximaal 40 regels
+- Als een probleem niet via CSS opgelost kan worden: sla het over"""
+
+    try:
+        response = client.messages.create(
+            model=model, max_tokens=600,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        css_fix = "".join(b.text for b in response.content if getattr(b, "type", None) == "text").strip()
+        if not css_fix:
+            print("[INFO] screenshot-repair: geen CSS-fixes gegenereerd")
+            return 0
+
+        # Verwijder eventuele code fences
+        css_fix = re.sub(r'^```\w*\s*', '', css_fix, flags=re.MULTILINE)
+        css_fix = re.sub(r'\s*```\s*$', '', css_fix, flags=re.MULTILINE)
+
+        injection = f"\n\n/* ── Screenshot-repair fixes ───────────────────────────────── */\n{css_fix.strip()}\n"
+        current = css_path.read_text(encoding="utf-8", errors="ignore")
+        # Verwijder eerdere screenshot-repair block als die er al in zit
+        current = re.sub(
+            r'\n\n/\* ── Screenshot-repair fixes.*?(?=\n\n/\*|\Z)',
+            '', current, flags=re.DOTALL
+        )
+        css_path.write_text(current + injection, encoding="utf-8")
+        fix_count = len(all_issues)
+        print(f"[OK]  screenshot-repair: {fix_count} issue(s) verwerkt in style.css ({len(css_fix)} tekens CSS)")
+        return fix_count
+    except Exception as e:
+        print(f"[WARN] screenshot-repair Claude-aanroep mislukt: {e}")
+        return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Repareer veelvoorkomende fouten in een gegenereerde site")
     parser.add_argument("--site-dir",        required=True, help="Pad naar de gegenereerde site-map")
     parser.add_argument("--validation-json", help="Optioneel: pad naar validate_generated_site JSON-rapport")
+    parser.add_argument("--screenshot-json", help="Optioneel: pad naar screenshot_validation.json voor visuele fixes")
     parser.add_argument("--passes",          type=int, default=2,
                         help="Aantal reparatierondes (default: 2)")
     args = parser.parse_args()
@@ -1025,7 +1108,17 @@ def main():
             print(f"[INFO] Geen wijzigingen in ronde {i + 1} — stoppen.")
             break
 
-    print(f"\n[OK]  Totaal: {total_file} bestandsfixes + {total_site} site-brede fixes in {min(i+1, args.passes)} ronde(s)")
+    # Screenshot-gebaseerde visuele fixes (apart van de standaard passes)
+    screenshot_fixes = 0
+    if args.screenshot_json:
+        shot_path = Path(args.screenshot_json)
+        if shot_path.exists():
+            print(f"\n[INFO] Screenshot-repair uitvoeren op basis van {shot_path.name}...")
+            screenshot_fixes = fix_screenshot_issues(site_dir, shot_path)
+        else:
+            print(f"[WARN] screenshot-json niet gevonden: {shot_path}")
+
+    print(f"\n[OK]  Totaal: {total_file} bestandsfixes + {total_site} site-brede fixes + {screenshot_fixes} screenshot-fixes in {min(i+1, args.passes)} ronde(s)")
 
 
 if __name__ == "__main__":

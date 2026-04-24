@@ -105,8 +105,9 @@ def analyze_screenshot(image_path: Path, client, model: str) -> list[str]:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site-dir",  required=True, help="Pad naar gegenereerde site")
-    parser.add_argument("--max-pages", type=int, default=4,
-                        help="Max aantal pagina's om te screenshotten (default: 4)")
+    from config import SCREENSHOT_MAX_PAGES
+    parser.add_argument("--max-pages", type=int, default=SCREENSHOT_MAX_PAGES,
+                        help=f"Max aantal pagina's om te screenshotten (default: {SCREENSHOT_MAX_PAGES})")
     parser.add_argument("--port",      type=int, default=9876)
     args = parser.parse_args()
 

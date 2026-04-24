@@ -37,5 +37,5 @@ MINIMUM_TEXT_CHARS    = 500
 MIN_HOMEPAGE_CHARS    = 3000
 
 # ── Screenshot-validatie ──────────────────────────────────────────────────────
-SCREENSHOT_MAX_PAGES  = 4
+SCREENSHOT_MAX_PAGES  = 1   # alleen homepage — CSS-issues gelden globaal
 SCREENSHOT_PORT       = 9876
