@@ -1225,6 +1225,10 @@ def serve_site_file(slug, filename):
     site_dir = _find_site_dir(slug)
     if not site_dir.exists():
         abort(404)
+    # Next.js static export: routes zijn mappen met index.html erin
+    target = site_dir / filename.rstrip("/")
+    if target.is_dir() and (target / "index.html").exists():
+        return send_from_directory(str(target), "index.html")
     return send_from_directory(str(site_dir), filename)
 
 
