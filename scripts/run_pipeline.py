@@ -438,7 +438,34 @@ def _create_ui_components(project_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    log(f"[OK]  UI componenten aangemaakt: button, card, badge, accordion, separator")
+    (ui_dir / "sheet.tsx").write_text(
+        '"use client";\n'
+        'import * as React from "react";\n'
+        'import { Slot } from "@radix-ui/react-slot";\n'
+        'import { X } from "lucide-react";\n'
+        'import { cn } from "@/lib/utils";\n\n'
+        'interface SheetProps { open?: boolean; onOpenChange?: (open: boolean) => void; children?: React.ReactNode; }\n'
+        'const Sheet = ({ children }: SheetProps) => <>{children}</>;\n\n'
+        'interface SheetTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement> { asChild?: boolean; }\n'
+        'const SheetTrigger = React.forwardRef<HTMLButtonElement, SheetTriggerProps>(({ asChild, className, ...props }, ref) => {\n'
+        '  const Comp = asChild ? Slot : "button";\n'
+        '  return <Comp ref={ref as any} className={cn("", className)} {...props} />;\n'
+        '});\n'
+        'SheetTrigger.displayName = "SheetTrigger";\n\n'
+        'interface SheetContentProps extends React.HTMLAttributes<HTMLDivElement> { side?: "left" | "right"; onClose?: () => void; }\n'
+        'const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(({ className, children, side = "right", onClose, ...props }, ref) => (\n'
+        '  <div ref={ref} className={cn("fixed inset-y-0 z-50 flex flex-col bg-background shadow-xl w-3/4 max-w-sm", side === "right" ? "right-0" : "left-0", className)} {...props}>\n'
+        '    <button onClick={onClose} className="absolute right-4 top-4 opacity-70 hover:opacity-100"><X className="h-4 w-4" /></button>\n'
+        '    {children}\n'
+        '  </div>\n));\n'
+        'SheetContent.displayName = "SheetContent";\n\n'
+        'const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (\n'
+        '  <div className={cn("flex flex-col space-y-2 p-6", className)} {...props} />\n);\n\n'
+        'export { Sheet, SheetTrigger, SheetContent, SheetHeader };\n',
+        encoding="utf-8",
+    )
+
+    log(f"[OK]  UI componenten aangemaakt: button, card, badge, accordion, separator, sheet")
 
 
 def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
