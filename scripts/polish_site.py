@@ -5,9 +5,10 @@ Stappen:
 1. Dedupliceer pagina's met bijna-gelijke bestandsnamen (spackspuiten vs spack-spuiten)
 2. Herstel header-inconsistentie: vervang headers van subpagina's die te veel afwijken
    van de homepage-header, met de opgeslagen referentie-header.
-3. Voeg Open Graph meta-tags toe (og:title, og:description, og:type)
-4. Voeg <link rel="canonical"> toe aan alle pagina's
-5. Injecteer demo-banner bovenaan elke pagina
+3. Normaliseer footer: vervang footer van alle subpagina's door die van index.html
+4. Voeg Open Graph meta-tags toe (og:title, og:description, og:type)
+5. Voeg <link rel="canonical"> toe aan alle pagina's
+6. Injecteer demo-banner bovenaan elke pagina
 """
 import argparse
 import os
@@ -193,7 +194,42 @@ def fix_header_consistency(site_dir: Path, threshold: float = 0.45) -> list[str]
     return fixes
 
 
-# ── Stap 3: Open Graph meta-tags ─────────────────────────────────────────────
+# ── Stap 3: normaliseer footer ───────────────────────────────────────────────
+
+def normalize_footers(site_dir: Path) -> list[str]:
+    """
+    Vervang de footer van alle subpagina's door die van index.html.
+
+    De homepage-footer is de enige die consistent goed gegenereerd wordt —
+    hij is de referentie voor het ontwerp. Subpagina's worden parallel
+    gegenereerd en wijken regelmatig af in class names of structuur.
+    """
+    index_path = site_dir / "index.html"
+    if not index_path.exists():
+        return []
+
+    ref_footer = _extract_block(
+        index_path.read_text(encoding="utf-8", errors="ignore"), "footer"
+    )
+    if not ref_footer:
+        return []
+
+    fixes: list[str] = []
+    for page in sorted(site_dir.glob("*.html")):
+        if page.name.startswith("_") or page.name == "index.html":
+            continue
+        content = page.read_text(encoding="utf-8", errors="ignore")
+        page_footer = _extract_block(content, "footer")
+        if not page_footer or page_footer == ref_footer:
+            continue
+        new_content = content.replace(page_footer, ref_footer, 1)
+        if new_content != content:
+            page.write_text(new_content, encoding="utf-8")
+            fixes.append(f"Footer genormaliseerd: {page.name}")
+    return fixes
+
+
+# ── Stap 4: Open Graph meta-tags ─────────────────────────────────────────────
 
 def add_og_meta(site_dir: Path) -> list[str]:
     """
@@ -341,7 +377,7 @@ def main():
         print(f"[INFO] Geen duplicaten gevonden")
     total_fixes += len(dedup_fixes)
 
-    print(f"\n[INFO] Stap 2/4: Header-consistentie controleren (drempel={args.threshold})...")
+    print(f"\n[INFO] Stap 2/5: Header-consistentie controleren (drempel={args.threshold})...")
     header_fixes = fix_header_consistency(site_dir, threshold=args.threshold)
     for fix in header_fixes:
         print(f"[OK]  {fix}")
@@ -349,7 +385,15 @@ def main():
         print(f"[INFO] Alle headers zijn consistent")
     total_fixes += len(header_fixes)
 
-    print(f"\n[INFO] Stap 3/4: Open Graph meta-tags toevoegen...")
+    print(f"\n[INFO] Stap 3/5: Footer normaliseren (index.html als referentie)...")
+    footer_fixes = normalize_footers(site_dir)
+    for fix in footer_fixes:
+        print(f"[OK]  {fix}")
+    if not footer_fixes:
+        print(f"[INFO] Alle footers zijn al gelijk aan homepage")
+    total_fixes += len(footer_fixes)
+
+    print(f"\n[INFO] Stap 4/5: Open Graph meta-tags toevoegen...")
     og_fixes = add_og_meta(site_dir)
     for fix in og_fixes:
         print(f"[OK]  {fix}")
@@ -357,7 +401,7 @@ def main():
         print(f"[INFO] Alle pagina's hebben al OG-meta")
     total_fixes += len(og_fixes)
 
-    print(f"\n[INFO] Stap 4/4: Canonical links toevoegen...")
+    print(f"\n[INFO] Stap 5/5: Canonical links toevoegen...")
     canonical_fixes = add_canonical_links(site_dir)
     for fix in canonical_fixes:
         print(f"[OK]  {fix}")
@@ -365,7 +409,7 @@ def main():
         print(f"[INFO] Alle pagina's hebben al een canonical link")
     total_fixes += len(canonical_fixes)
 
-    print(f"\n[INFO] Stap 5/5: Demo-banner injecteren...")
+    print(f"\n[INFO] Stap 6/6: Demo-banner injecteren...")
     if args.company:
         banner_fixes = inject_demo_banner(site_dir, args.company)
         for fix in banner_fixes:
