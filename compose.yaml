@@ -40,12 +40,38 @@ services:
       - "8181:8181"
     command: python /workspace/app/server.py
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8181/')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  bridge:
+    <<: *base
+    container_name: site-factory-bridge
+    network_mode: host
+    command: python3 /workspace/bridge/bridge.py
+    restart: unless-stopped
+    volumes:
+      - ./app:/workspace/app
+      - ./data:/workspace/data
+      - ./output:/workspace/output
+      - ./prompts:/workspace/prompts:ro
+      - ./scripts:/workspace/scripts:ro
+      - ./bridge:/workspace/bridge:ro
+      - /home/ryan-poser/.vscode/extensions:/vscode-extensions:ro
+      - /home/ryan-poser/.claude.json:/root/.claude.json:ro
+      - /home/ryan-poser/.claude:/root/.claude:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+      CLAUDE_BIN: ""
     deploy:
       resources:
         limits:

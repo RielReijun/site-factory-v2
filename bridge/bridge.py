@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""
+bridge.py — Lokale HTTP-brug die claude CLI aanroept namens het dashboard.
+
+Draait op de HOST (niet in Docker) op poort 8182.
+Het dashboard (in Docker) roept http://host.docker.internal:8182/chat aan.
+Claude gebruikt het Max-account en de MCP-tools uit .claude/settings.json.
+
+Start: python3 bridge.py
+"""
+import glob
+import json
+import os
+import subprocess
+from pathlib import Path
+
+from flask import Flask, Response, request, stream_with_context
+
+PROJECT_DIR = Path(__file__).parent.parent
+BRIDGE_PORT = 8182
+
+app = Flask(__name__)
+
+
+def _find_claude() -> str:
+    """Zoek de claude-binary via gemounte extensiepaden of PATH."""
+    patterns = [
+        "/vscode-extensions/anthropic.claude-code-*/resources/native-binary/claude",
+        str(Path.home() / ".vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude"),
+    ]
+    for pattern in patterns:
+        matches = sorted(glob.glob(pattern), reverse=True)
+        if matches:
+            return matches[0]
+    for candidate in ["/usr/local/bin/claude", "/usr/bin/claude"]:
+        if Path(candidate).exists():
+            return candidate
+    raise FileNotFoundError("claude binary niet gevonden. Stel CLAUDE_BIN in als env-variabele.")
+
+
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or _find_claude()
+
+
+@app.route("/health")
+def health():
+    return {"ok": True, "claude": CLAUDE_BIN}
+
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    data    = request.get_json(silent=True) or {}
+    message = data.get("message", "").strip()
+    if not message:
+        return {"error": "Geen bericht"}, 400
+
+    def _generate():
+        try:
+            proc = subprocess.Popen(
+                [CLAUDE_BIN, "--print", "--output-format", "text", message],
+                cwd=str(PROJECT_DIR),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            for line in iter(proc.stdout.readline, ""):
+                yield f"data: {json.dumps({'text': line})}\n\n"
+            proc.wait(timeout=120)
+            if proc.returncode != 0:
+                err = proc.stderr.read().strip()
+                yield f"data: {json.dumps({'error': err or 'Claude gaf een fout terug'})}\n\n"
+            yield "data: [DONE]\n\n"
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            yield f"data: {json.dumps({'error': 'Timeout — Claude reageerde niet op tijd'})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":               "no-cache",
+            "X-Accel-Buffering":           "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+if __name__ == "__main__":
+    print(f"[INFO] Bridge gestart op poort {BRIDGE_PORT}")
+    print(f"[INFO] Claude binary: {CLAUDE_BIN}")
+    print(f"[INFO] Project dir:   {PROJECT_DIR}")
+    app.run(host="0.0.0.0", port=BRIDGE_PORT, debug=False, threaded=True)

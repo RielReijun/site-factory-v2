@@ -887,6 +887,130 @@
       .prospect-right { align-items: flex-start; }
       .stages { flex-wrap: wrap; }
     }
+
+    /* ── Chat widget ──────────────────────────────────── */
+
+    .chat-fab {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(99,102,241,.45);
+      z-index: 100;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(99,102,241,.6); }
+    .chat-fab svg   { width: 24px; height: 24px; fill: #fff; }
+
+    .chat-panel {
+      position: fixed;
+      bottom: 92px;
+      right: 28px;
+      width: 380px;
+      max-height: 520px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 40px rgba(0,0,0,.5);
+      z-index: 100;
+      overflow: hidden;
+      transition: opacity .18s, transform .18s;
+    }
+    .chat-panel.hidden { opacity: 0; pointer-events: none; transform: translateY(12px); }
+
+    .chat-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .chat-dot {
+      width: 7px; height: 7px;
+      background: var(--green);
+      border-radius: 50%;
+    }
+    .chat-dot.offline { background: var(--red); }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .chat-msg {
+      max-width: 90%;
+      padding: 9px 13px;
+      border-radius: 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-msg.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+    }
+    .chat-msg.assistant {
+      align-self: flex-start;
+      background: #22253a;
+      color: var(--text);
+    }
+    .chat-msg.error {
+      align-self: flex-start;
+      background: rgba(239,68,68,.15);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,.3);
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 8px 12px;
+      resize: none;
+      outline: none;
+      font-family: var(--font);
+      line-height: 1.4;
+      max-height: 100px;
+    }
+    .chat-input:focus { border-color: var(--accent); }
+    .chat-send {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      padding: 0 14px;
+      font-size: 16px;
+      transition: opacity .15s;
+    }
+    .chat-send:disabled { opacity: .4; cursor: default; }
   </style>
 </head>
 <body>
@@ -2070,6 +2194,131 @@ setInterval(loadProspects, 30000);
 setInterval(loadTrash,     60000);
 setInterval(pollStatus,     2000);
 setInterval(loadUsage,     60000);
+</script>
+
+<!-- ── Chat widget ───────────────────────────────────────────────────── -->
+<button class="chat-fab" id="chat-fab" title="Chat met Claude">
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2C6.48 2 2 6.02 2 11c0 2.48 1.02 4.74 2.69 6.39L4 21l3.87-1.03A9.85 9.85 0 0012 20c5.52 0 10-4.02 10-9S17.52 2 12 2z"/>
+  </svg>
+</button>
+
+<div class="chat-panel hidden" id="chat-panel">
+  <div class="chat-header">
+    <div class="chat-dot" id="chat-dot"></div>
+    Claude (Max)
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-msg assistant">Hallo! Ik kan prospects toevoegen, de pipeline starten en de status checken. Wat wil je doen?</div>
+  </div>
+  <div class="chat-input-row">
+    <textarea class="chat-input" id="chat-input" rows="1" placeholder="Typ je vraag of opdracht…"></textarea>
+    <button class="chat-send" id="chat-send">↑</button>
+  </div>
+</div>
+
+<script>
+// ── Chat widget ────────────────────────────────────────────────────────
+(function () {
+  const fab      = document.getElementById('chat-fab');
+  const panel    = document.getElementById('chat-panel');
+  const messages = document.getElementById('chat-messages');
+  const input    = document.getElementById('chat-input');
+  const sendBtn  = document.getElementById('chat-send');
+  const dot      = document.getElementById('chat-dot');
+
+  // Check bridge health
+  async function checkBridge() {
+    try {
+      const r = await fetch('/api/chat', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({message:'ping'}) });
+      dot.classList.toggle('offline', !r.ok);
+    } catch { dot.classList.add('offline'); }
+  }
+  checkBridge();
+
+  fab.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) input.focus();
+  });
+
+  function addMsg(text, role) {
+    const el = document.createElement('div');
+    el.className = `chat-msg ${role}`;
+    el.textContent = text;
+    messages.appendChild(el);
+    messages.scrollTop = messages.scrollHeight;
+    return el;
+  }
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    addMsg(text, 'user');
+    const assistantEl = addMsg('…', 'assistant');
+    let buffer = '';
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+
+      if (!res.ok) {
+        assistantEl.className = 'chat-msg error';
+        assistantEl.textContent = 'Fout: bridge niet bereikbaar. Start bridge/bridge.py op de host.';
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6);
+          if (payload === '[DONE]') break;
+          try {
+            const { text: t, error } = JSON.parse(payload);
+            if (error) {
+              assistantEl.className = 'chat-msg error';
+              assistantEl.textContent = error;
+              return;
+            }
+            if (t) {
+              buffer += t;
+              assistantEl.textContent = buffer;
+              messages.scrollTop = messages.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+      if (!buffer) assistantEl.textContent = '(geen antwoord)';
+    } catch (e) {
+      assistantEl.className = 'chat-msg error';
+      assistantEl.textContent = 'Verbindingsfout: ' + e.message;
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+  });
+})();
 </script>
 
 </body>

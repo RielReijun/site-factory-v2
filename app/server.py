@@ -1056,6 +1056,40 @@ def api_usage_snapshot_get():
         return jsonify(None)
 
 
+BRIDGE_URL = "http://host.docker.internal:8182"
+
+
+@app.post("/api/chat")
+def api_chat():
+    """Stuur een bericht naar de lokale claude-bridge en stream het antwoord terug."""
+    data    = request.get_json(silent=True) or {}
+    message = data.get("message", "").strip()
+    if not message:
+        return jsonify({"error": "Geen bericht"}), 400
+
+    def _stream():
+        try:
+            with _requests.post(
+                f"{BRIDGE_URL}/chat",
+                json={"message": message},
+                stream=True,
+                timeout=130,
+            ) as r:
+                for chunk in r.iter_content(chunk_size=None):
+                    if chunk:
+                        yield chunk
+        except _requests.exceptions.ConnectionError:
+            yield b"data: " + json.dumps({"error": "Bridge niet bereikbaar. Start bridge/bridge.py op de host."}).encode() + b"\n\ndata: [DONE]\n\n"
+        except Exception as e:
+            yield b"data: " + json.dumps({"error": str(e)}).encode() + b"\n\ndata: [DONE]\n\n"
+
+    return Response(
+        _stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/sites/<slug>/")
 def serve_site_index(slug):
     site_dir = OUTPUT_DIR / f"{slug}-site"

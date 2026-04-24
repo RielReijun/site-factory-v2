@@ -1,0 +1,15 @@
+[Unit]
+Description=Site Factory Claude Bridge
+After=network.target
+
+[Service]
+Type=simple
+User=ryan-poser
+WorkingDirectory=/home/ryan-poser/site-factory
+ExecStart=python3 /home/ryan-poser/site-factory/bridge/bridge.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "site-factory": {
+      "command": "python3",
+      "args": ["/home/ryan-poser/site-factory/scripts/mcp_server.py"],
+      "env": {}
+    }
+  }
+}
