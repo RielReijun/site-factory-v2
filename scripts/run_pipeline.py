@@ -665,8 +665,27 @@ def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> b
     duration = time.monotonic() - t0
     ok = process.returncode == 0
     _step_timings.append({"step": "build_nextjs", "duration_s": round(duration, 1), "ok": ok})
+
     if not ok:
-        log(f"[FAIL] build_nextjs mislukt (exit {process.returncode})")
+        log(f"[WARN] build_nextjs mislukt — probeer auto-fixes en bouw opnieuw")
+        _fix_lucide_icons(project_dir)
+        _fix_invalid_style_props(project_dir)
+        _fix_layout_tsx(project_dir)
+
+        proc2 = subprocess.Popen(
+            cmd, cwd=str(project_dir),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        for line in iter(proc2.stdout.readline, ""):
+            log(line.rstrip("\n"))
+        proc2.wait()
+        ok = proc2.returncode == 0
+        if ok:
+            log("[OK]  build_nextjs geslaagd na auto-fix")
+        else:
+            log(f"[FAIL] build_nextjs mislukt ook na auto-fix (exit {proc2.returncode})")
+
     log(f"[INFO] Duur: {_fmt_duration(duration)}")
     return ok
 
