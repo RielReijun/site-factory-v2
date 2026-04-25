@@ -1,17 +1,18 @@
 """
-template_engine.py — Minimale template engine voor TSX-componentbestanden.
+template_engine.py — Template engine voor TSX-componentbestanden.
 
-Syntax (conflicteert niet met JSX `{}`-expressies):
+Syntax (conflicteert niet met JSX-expressies):
 
   [[ field ]]                   — waarde-substitutie
   [[ ?field ]] ... [[ / ]]      — optioneel blok (render als field truthy)
-  [[ *items ]] ... [[ / ]]      — loop over lijst, binnenin:
-                                    [[ .field ]]   → item-eigenschap
-                                    [[ .field.sub ]] → geneste eigenschap
+  [[ *items ]] ... [[ / ]]      — loop, binnenin:
+                                    [[ .field ]]      item-eigenschap
+                                    [[ ?.field ]]     optioneel item-eigenschap
   [[ ~field ]]                  — veilig Lucide-icon (controleert whitelist)
+  [[ ~.field ]]                 — Lucide-icon van item-eigenschap
 
-Bestanden: prompts/components/{type}/{variant}.tsx
-Imports worden automatisch gecollecteerd uit de gerenderde TSX.
+Nesting: conditionals en loops mogen in elkaar genest zijn.
+De tokenizer-gebaseerde parser verwerkt nesting correct.
 """
 from __future__ import annotations
 
@@ -21,7 +22,6 @@ from typing import Any
 
 COMPONENTS_DIR = Path(__file__).parent.parent / "prompts" / "components"
 
-# Iconen die echt bestaan in lucide-react
 SAFE_ICONS = {
     "Phone", "Mail", "MapPin", "Clock", "ChevronRight", "ChevronDown",
     "Check", "Star", "Scissors", "Sparkles", "Heart", "User", "Users",
@@ -44,22 +44,76 @@ def safe_icon(name: str, fallback: str = "Check") -> str:
     return fallback
 
 
-# ── Regex patronen ────────────────────────────────────────────────────────────
+# ── Tokenizer ─────────────────────────────────────────────────────────────────
 
-# Volgorde is belangrijk: loops en conditionals vóór eenvoudige substitutie
-_LOOP_RE  = re.compile(r'\[\[\s*\*(\w+)\s*\]\](.*?)\[\[\s*/\s*\]\]', re.DOTALL)
-_COND_RE  = re.compile(r'\[\[\s*\?(\w+)\s*\]\](.*?)\[\[\s*/\s*\]\]', re.DOTALL)
-_ICON_RE  = re.compile(r'\[\[\s*~(\w+)\s*\]\]')
-_VAR_RE   = re.compile(r'\[\[\s*(\.?\w+(?:\.\w+)*)\s*\]\]')
+_TOKEN_RE = re.compile(r'\[\[\s*(.*?)\s*\]\]', re.DOTALL)
 
+
+def _tokenize(template: str) -> list[tuple[str, str]]:
+    """Splits template in afwisselend TEXT en DIRECTIVE tokens."""
+    tokens: list[tuple[str, str]] = []
+    last = 0
+    for m in _TOKEN_RE.finditer(template):
+        if m.start() > last:
+            tokens.append(("TEXT", template[last:m.start()]))
+        tokens.append(("DIR", m.group(1).strip()))
+        last = m.end()
+    if last < len(template):
+        tokens.append(("TEXT", template[last:]))
+    return tokens
+
+
+# ── Parser ────────────────────────────────────────────────────────────────────
+
+def _parse_block(tokens: list, pos: int) -> tuple[list, int]:
+    """
+    Parse een blok nodes totdat een [[ / ]] sluit-tag of einde bereikt.
+    Geeft (nodes, pos_na_sluit_tag) terug.
+
+    Node-types:
+      ("text", str)              — letterlijke tekst
+      ("var",  str)              — [[ field ]] of [[ .field ]]
+      ("icon", str)              — [[ ~field ]] of [[ ~.field ]]
+      ("cond", str, list)        — [[ ?field ]]...nodes...[[ / ]]
+      ("loop", str, list)        — [[ *field ]]...nodes...[[ / ]]
+    """
+    nodes: list = []
+    while pos < len(tokens):
+        kind, value = tokens[pos]
+        if kind == "TEXT":
+            nodes.append(("text", value))
+            pos += 1
+        elif kind == "DIR":
+            if value == "/":
+                return nodes, pos + 1   # stop, consumeer [[ / ]]
+            elif value.startswith("?"):
+                field = value[1:].strip()
+                body, pos = _parse_block(tokens, pos + 1)
+                nodes.append(("cond", field, body))
+            elif value.startswith("*"):
+                field = value[1:].strip()
+                body, pos = _parse_block(tokens, pos + 1)
+                nodes.append(("loop", field, body))
+            elif value.startswith("~"):
+                nodes.append(("icon", value[1:].strip()))
+                pos += 1
+            else:
+                nodes.append(("var", value))
+                pos += 1
+        else:
+            pos += 1
+    return nodes, pos
+
+
+# ── Evaluator ─────────────────────────────────────────────────────────────────
 
 def _get(data: dict | None, key: str, item: dict | None = None) -> Any:
-    """Haal een waarde op. key kan 'field' of '.field' (item-scope) zijn."""
+    """Haal waarde op. key kan 'field' of '.field' (item-scope) zijn."""
     if key.startswith("."):
-        src = item or {}
+        src   = item or {}
         parts = key[1:].split(".")
     else:
-        src = data or {}
+        src   = data or {}
         parts = key.split(".")
     val = src
     for p in parts:
@@ -67,64 +121,41 @@ def _get(data: dict | None, key: str, item: dict | None = None) -> Any:
             val = val.get(p, "")
         else:
             return ""
-    return val or ""
+    return val if val is not None else ""
 
 
-def _render_loop(template: str, items: list, data: dict) -> str:
-    """Render een loop-blok voor elke item in de lijst."""
-    parts = []
-    for item in items:
-        rendered = _render_inner(template, data, item)
-        parts.append(rendered)
-    return "\n".join(parts)
+def _evaluate(nodes: list, data: dict, item: dict | None = None) -> str:
+    parts: list[str] = []
+    for node in nodes:
+        ntype = node[0]
+        if ntype == "text":
+            parts.append(node[1])
+        elif ntype == "var":
+            parts.append(str(_get(data, node[1], item)))
+        elif ntype == "icon":
+            raw = str(_get(data, node[1], item))
+            parts.append(safe_icon(raw or node[1].lstrip(".")))
+        elif ntype == "cond":
+            _, field, body = node
+            if _get(data, field, item):
+                parts.append(_evaluate(body, data, item))
+        elif ntype == "loop":
+            _, field, body = node
+            items_list = data.get(field, []) if not field.startswith(".") \
+                         else (_get(data, field, item) or [])
+            if isinstance(items_list, list):
+                for loop_item in items_list:
+                    parts.append(_evaluate(body, data, loop_item if isinstance(loop_item, dict) else {}))
+    return "".join(parts)
 
 
-def _render_inner(template: str, data: dict, item: dict | None = None) -> str:
-    """Render één level van de template (loops al verwerkt op dit punt)."""
-
-    # Conditionals
-    def replace_cond(m: re.Match) -> str:
-        field   = m.group(1)
-        content = m.group(2)
-        val     = _get(data, field, item)
-        return _render_inner(content, data, item) if val else ""
-
-    result = _COND_RE.sub(replace_cond, template)
-
-    # Icons
-    def replace_icon(m: re.Match) -> str:
-        return safe_icon(str(_get(data, m.group(1), item)) or m.group(1))
-
-    result = _ICON_RE.sub(replace_icon, result)
-
-    # Eenvoudige variabelen (inclusief .item-velden)
-    def replace_var(m: re.Match) -> str:
-        return str(_get(data, m.group(1), item))
-
-    result = _VAR_RE.sub(replace_var, result)
-    return result
-
+# ── Publieke API ──────────────────────────────────────────────────────────────
 
 def render(template: str, data: dict) -> str:
-    """
-    Render een template string met de gegeven data.
-    Verwerkt loops, conditionals en substitutie.
-    """
-    # Loops eerst (buitenste niveau)
-    def replace_loop(m: re.Match) -> str:
-        field    = m.group(1)
-        body     = m.group(2)
-        items    = data.get(field, [])
-        if not isinstance(items, list):
-            return ""
-        return _render_loop(body, items, data)
-
-    result = _LOOP_RE.sub(replace_loop, template)
-
-    # Dan conditionals en substitutie
-    result = _render_inner(result, data)
-
-    return result
+    """Render een template-string met de gegeven data."""
+    tokens      = _tokenize(template)
+    nodes, _    = _parse_block(tokens, 0)
+    return _evaluate(nodes, data)
 
 
 def collect_icons(tsx: str) -> set[str]:
@@ -137,11 +168,7 @@ def collect_icons(tsx: str) -> set[str]:
 
 
 def load_template(section_type: str, variant: str) -> str | None:
-    """
-    Laad een template-bestand.
-    Zoekt: prompts/components/{type}/{variant}.tsx
-    Valt terug op: prompts/components/{type}/default.tsx
-    """
+    """Laad een template-bestand. Valt terug op default.tsx."""
     base = COMPONENTS_DIR / section_type
     for name in [variant, "default"]:
         path = base / f"{name}.tsx"
@@ -151,14 +178,13 @@ def load_template(section_type: str, variant: str) -> str | None:
 
 
 def list_sections() -> dict[str, list[str]]:
-    """Geeft een overzicht van beschikbare sectietypes en varianten."""
+    """Geeft beschikbare sectietypes en varianten."""
     result: dict[str, list[str]] = {}
     if not COMPONENTS_DIR.exists():
         return result
-    for section_dir in sorted(COMPONENTS_DIR.iterdir()):
-        if not section_dir.is_dir():
-            continue
-        variants = [f.stem for f in sorted(section_dir.glob("*.tsx"))]
-        if variants:
-            result[section_dir.name] = variants
+    for d in sorted(COMPONENTS_DIR.iterdir()):
+        if d.is_dir():
+            variants = [f.stem for f in sorted(d.glob("*.tsx"))]
+            if variants:
+                result[d.name] = variants
     return result
