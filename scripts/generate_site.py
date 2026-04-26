@@ -130,6 +130,8 @@ Openingstijden zijn kritisch voor lokale bedrijven. Als de briefing ze noemt:
 
 ## Design principes (anti-patronen vermijden)
 - NOOIT em-dashes (—) in kopij — gebruik een komma, dubbele punt of nieuwe zin
+- NOOIT zelfverzonnen Tailwind-kleurnamen zoals `bg-cream`, `bg-forest`, `bg-ink` — gebruik DaisyUI semantisch (`bg-base-100`, `bg-primary`, `bg-neutral`) of exacte hex (`bg-[#2C4A3E]`)
+- Header-achtergrond: ALTIJD `bg-base-100/95 backdrop-blur-sm` voor sticky header — nooit transparant of een onbekende kleur
 - GEEN Inter als enige font — combineer met een serif of display font
 - GEEN grijze tekst op gekleurde achtergrond
 - GEEN cards genest in cards

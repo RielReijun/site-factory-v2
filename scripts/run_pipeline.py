@@ -401,19 +401,31 @@ def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None
 
 def _fix_daisyui_colors(project_dir: Path) -> None:
     """
-    Vervang niet-bestaande CSS-variabelen door DaisyUI semantische klassen.
-    Claude gebruikt bg-[--color-bg] / bg-[--color-primary] die niet altijd
-    werken in DaisyUI-themes.
+    Vervang niet-bestaande CSS-klassen door DaisyUI semantische klassen.
+    Vangt twee patronen:
+    1. CSS-variabelen die niet bestaan: bg-[--color-bg]
+    2. Uitgevonden kleurnames die Tailwind niet kent: bg-cream, bg-forest
     """
     import re as _re
+
+    # Uitgevonden kleurnames die Claude soms gebruikt als header-achtergrond
+    INVENTED_BG_HEADER = _re.compile(
+        r'bg-(?:cream|ivory|white-warm|off-white|sand|light|background|bg|surface|paper|canvas)'
+        r'(?:\s|/|\b)',
+        _re.IGNORECASE,
+    )
+
     for tsx in (project_dir / "src").rglob("*.tsx"):
         try:
             c = tsx.read_text(encoding="utf-8")
             orig = c
-            # Header/nav: transparante achtergrond → glassmorphism
+            # Header/nav: transparante of onbekende achtergrond → glassmorphism
             c = c.replace("bg-[--color-bg]", "bg-base-100/95 backdrop-blur-sm")
             c = c.replace("bg-[--color-background]", "bg-base-100/95 backdrop-blur-sm")
-            # Footer: primaire kleur met witte tekst → neutral (altijd donker genoeg)
+            # Header.tsx specifiek: vervang uitgevonden lichte kleurnamen
+            if tsx.name == "Header.tsx":
+                c = INVENTED_BG_HEADER.sub("bg-base-100/95 backdrop-blur-sm ", c)
+            # Footer: primaire kleur met witte tekst → neutral
             c = _re.sub(
                 r'bg-\[--color-primary\](\s+)text-white',
                 r'bg-neutral\1text-neutral-content', c
@@ -422,7 +434,6 @@ def _fix_daisyui_colors(project_dir: Path) -> None:
                 r'bg-primary(\s+)text-white(?!\s*/)',
                 r'bg-neutral\1text-neutral-content', c
             )
-            # Witte tekst in footer context
             if "neutral-content" in c or tsx.name == "Footer.tsx":
                 c = c.replace("text-white/80", "text-neutral-content/80")
                 c = c.replace("text-white/60", "text-neutral-content/60")
