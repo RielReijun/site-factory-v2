@@ -257,28 +257,44 @@ def main():
             pass
 
     if next_config.exists():
+        import re as _re, subprocess as _sp
         try:
-            cfg = next_config.read_text(encoding="utf-8")
-            if "basePath" in cfg:
-                import re as _re
-                cfg_clean = _re.sub(r'\s*basePath:\s*["\'][^"\']*["\'],?\s*\n?', '\n', cfg)
-                cfg_clean = _re.sub(r'\s*assetPrefix:\s*["\'][^"\']*["\'],?\s*\n?', '\n', cfg_clean)
-                next_config.write_text(cfg_clean, encoding="utf-8")
-                print("[INFO] basePath verwijderd uit next.config.ts voor deploy")
+            cfg_original = next_config.read_text(encoding="utf-8")
 
-                # Rebuild met schone config
-                import subprocess as _sp
-                print("[INFO] Rebuild voor deploy (zonder basePath)...")
-                r = _sp.run(["npm", "run", "build"], cwd=str(project_dir),
-                            capture_output=True, text=True)
-                if r.returncode == 0:
-                    print("[OK]  Rebuild geslaagd — /out/ klaar voor Cloudflare")
-                else:
-                    print("[WARN] Rebuild mislukt — deployen met bestaande /out/")
-                    # Herstel next.config.ts
-                    next_config.write_text(cfg, encoding="utf-8")
+            # Verwijder altijd basePath/assetPrefix voor een schone productie-build
+            cfg_clean = _re.sub(r'\s*basePath:\s*["\'][^"\']*["\'],?\s*\n?', '\n', cfg_original)
+            cfg_clean = _re.sub(r'\s*assetPrefix:\s*["\'][^"\']*["\'],?\s*\n?', '\n', cfg_clean)
+            next_config.write_text(cfg_clean, encoding="utf-8")
+
+            # ALTIJD rebuilden — anders kan /out/ nog stale preview-links bevatten
+            print("[INFO] Rebuild voor deploy (root-config, geen basePath)...")
+            r = _sp.run(["npm", "run", "build"], cwd=str(project_dir),
+                        capture_output=True, text=True)
+
+            if r.returncode == 0:
+                # Controleer dat /out/index.html geen /sites/<slug>/ bevat
+                index = site_dir / "index.html"
+                if index.exists():
+                    content = index.read_text(encoding="utf-8", errors="ignore")
+                    slug_in_path = f"/sites/{args.slug}/_next"
+                    if slug_in_path in content:
+                        print(f"[FAIL] /out/index.html bevat nog {slug_in_path} — rebuild mislukt")
+                        next_config.write_text(cfg_original, encoding="utf-8")
+                        sys.exit(1)
+                print("[OK]  Rebuild geslaagd — /out/ bevat geen preview-paden")
+            else:
+                print("[FAIL] Rebuild mislukt voor deploy")
+                next_config.write_text(cfg_original, encoding="utf-8")
+                sys.exit(1)
+
+            # Herstel next.config.ts naar preview-config voor lokale dashboard
+            next_config.write_text(cfg_original, encoding="utf-8")
+            print("[INFO] next.config.ts hersteld naar preview-config (basePath terug)")
+
+        except SystemExit:
+            raise
         except Exception as e:
-            print(f"[WARN] basePath cleanup mislukt: {e}")
+            print(f"[WARN] Deploy config cleanup mislukt: {e}")
 
     # Stap 1: push naar GitHub
     print(f"\n[INFO] Stap 1/2: Push naar GitHub...")
