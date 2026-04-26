@@ -1481,7 +1481,7 @@ def main():
         log(f"[WARN] Timings opslaan mislukt: {e}")
 
     # ── Repair-and-retry loop — max 2 rondes ──────────────────────────────────
-    MAX_REPAIR_ROUNDS = 2
+    MAX_REPAIR_ROUNDS = 3  # round 1: CSS, round 2: page-regen, round 3: safe fallback
 
     def _build_quality(vdir: Path, jout: Path) -> dict:
         """Bouw quality_report op basis van alle validatie-outputs."""

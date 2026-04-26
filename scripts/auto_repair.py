@@ -173,11 +173,16 @@ def repair_visual_issue(classified: dict, site_dir: Path, screenshot_json: Path 
         # Regenereer pages met visuele issues
         try:
             shot_data = json.loads(screenshot_json.read_text(encoding="utf-8"))
-            affected_pages = {
-                p["page"].replace("/index.html", "").replace(".html", "").strip("/")
-                for p in shot_data.get("results", [])
-                if p.get("issues") and p["page"] not in ("", "/", "index.html")
-            }
+            # Gebruik "route" veld (nieuw) of fallback op page-parsing (oud)
+            affected_pages = set()
+            for p in shot_data.get("results", []):
+                if not p.get("issues"):
+                    continue
+                route = p.get("route") or p.get("page", "")
+                # Normaliseer: verwijder index.html, leading slash, extensie
+                route = route.replace("/index.html", "").replace(".html", "").strip("/.")
+                if route and route not in ("", "index", "404", "legal", "_not-found"):
+                    affected_pages.add(route)
             regenerated = 0
             for page_slug in affected_pages:
                 if not page_slug:
@@ -318,10 +323,26 @@ def run_repair_cycle(
             result["needs_screenshot"] = True
             log_fn(f"  → visual_issue ({action['action_kind']}): {'ok' if ok else 'mislukt'}")
 
-        elif btype in ("build_failed", "validate_failed"):
+        elif btype == "validate_failed":
+            # Voer HTML-directe repair uit via repair_generated_site
+            try:
+                import subprocess as _sp
+                r = _sp.run(
+                    ["python", str(SCRIPTS_DIR / "repair_generated_site.py"),
+                     "--site-dir", str(site_dir), "--passes", "1"],
+                    capture_output=True, text=True, cwd=str(SCRIPTS_DIR),
+                )
+                ok = r.returncode == 0
+                action["action_kind"] = "html_patch"
+                action["ok"] = ok
+                log_fn(f"  → validate_failed: repair_generated_site {'ok' if ok else 'mislukt'}")
+            except Exception as e:
+                log_fn(f"  → validate_failed repair exception: {e}")
+
+        elif btype == "build_failed":
             action["action_kind"] = "pipeline_autofix"
-            action["ok"] = False  # pipeline auto-fix handelt dit af
-            log_fn(f"  → {btype}: overgedragen aan pipeline auto-fix")
+            action["ok"] = False
+            log_fn(f"  → build_failed: pipeline auto-fix handelt dit af bij rebuild")
 
         else:
             log_fn(f"  → unknown blocker: geen actie")

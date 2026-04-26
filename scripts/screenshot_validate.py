@@ -205,8 +205,15 @@ def main():
                     continue
 
                 issues = analyze_screenshot(shot_path, client, model)
+                # route: bruikbare slug voor auto_repair (bijv. "contact" of "over-ons")
+                rel = html_path.relative_to(site_dir)
+                route_slug = (
+                    str(rel.parent) if html_path.name == "index.html" and rel.parent != Path(".")
+                    else rel.stem
+                )
                 result = {
-                    "page":      html_path.name,
+                    "page":      str(rel),          # volledig relatief pad: over-ons/index.html
+                    "route":     route_slug,         # slug voor regeneratie: over-ons
                     "viewport":  viewport_w,
                     "label":     label,
                     "screenshot": str(shot_path.relative_to(site_dir)),
