@@ -230,6 +230,35 @@ def main():
     repo_name = f"site-{slug}"
     cf_name   = f"site-{slug}"
 
+    # ── Next.js: verwijder basePath en rebuild voor deploy ────────────────────
+    # De basePath "/sites/[slug]" is alleen voor dashboard-preview.
+    # Op Cloudflare staat de site op de root — basePath moet weg.
+    project_dir = site_dir.parent  # /out/../ = het Next.js project
+    next_config = project_dir / "next.config.ts"
+    if next_config.exists():
+        try:
+            cfg = next_config.read_text(encoding="utf-8")
+            if "basePath" in cfg:
+                import re as _re
+                cfg_clean = _re.sub(r'\s*basePath:\s*["\'][^"\']*["\'],?\s*\n?', '\n', cfg)
+                cfg_clean = _re.sub(r'\s*assetPrefix:\s*["\'][^"\']*["\'],?\s*\n?', '\n', cfg_clean)
+                next_config.write_text(cfg_clean, encoding="utf-8")
+                print("[INFO] basePath verwijderd uit next.config.ts voor deploy")
+
+                # Rebuild met schone config
+                import subprocess as _sp
+                print("[INFO] Rebuild voor deploy (zonder basePath)...")
+                r = _sp.run(["npm", "run", "build"], cwd=str(project_dir),
+                            capture_output=True, text=True)
+                if r.returncode == 0:
+                    print("[OK]  Rebuild geslaagd — /out/ klaar voor Cloudflare")
+                else:
+                    print("[WARN] Rebuild mislukt — deployen met bestaande /out/")
+                    # Herstel next.config.ts
+                    next_config.write_text(cfg, encoding="utf-8")
+        except Exception as e:
+            print(f"[WARN] basePath cleanup mislukt: {e}")
+
     # Stap 1: push naar GitHub
     print(f"\n[INFO] Stap 1/2: Push naar GitHub...")
     github_url = push_to_github(site_dir, slug, company, github_token, github_user)
