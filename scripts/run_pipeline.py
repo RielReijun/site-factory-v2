@@ -529,31 +529,22 @@ def _fix_globals_css(project_dir: Path, collected_path: Path | None = None) -> N
     has_import = "@import" in css and "tailwindcss" in css
     has_v3     = "@tailwind base" in css or "@tailwind components" in css or "@tailwind utilities" in css
 
-    # Extraheer merkkleur uit briefing als die beschikbaar is
+    # Genereer volledig kleurenpalet vanuit merkkleur(en) in de briefing
     brand_css = ""
     if collected_path:
         briefing_file = collected_path / "briefing.md"
         if briefing_file.exists():
-            brief = briefing_file.read_text(encoding="utf-8", errors="ignore")
-            colors = {}
-            for label, var in [
-                ("Primaire kleur", "--color-primary"),
-                ("Secundaire kleur", "--color-secondary"),
-                ("Achtergrond", "--color-base-100"),
-                ("Tekst", "--color-base-content"),
-            ]:
-                m = re.search(rf"{label}[:\s]+(#[0-9a-fA-F]{{3,6}})", brief)
-                if m:
-                    colors[var] = m.group(1)
-            if colors:
-                vars_str = "\n  ".join(f"{k}: {v};" for k, v in colors.items())
-                # Zet ook neutral op primary-kleur zodat footer altijd klopt
-                if "--color-primary" in colors:
-                    vars_str += f"\n  --color-neutral: {colors['--color-primary']};"
-                    vars_str += f"\n  --color-neutral-content: {colors.get('--color-base-100', '#FAF7F2')};"
-                    vars_str += f"\n  --color-primary-content: {colors.get('--color-base-100', '#FAF7F2')};"
-                brand_css = f"\n/* Merkspecifieke kleuren uit briefing */\n[data-theme=\"brand\"], :root {{\n  {vars_str}\n}}\n"
-                log(f"[OK]  globals.css: merkkleur uit briefing geladen ({len(colors)} vars)")
+            try:
+                from color_utils import extract_colors_from_briefing, generate_palette, palette_to_css
+                brief = briefing_file.read_text(encoding="utf-8", errors="ignore")
+                primary, secondary = extract_colors_from_briefing(brief)
+                if primary:
+                    palette  = generate_palette(primary, secondary)
+                    brand_css = "\n" + palette_to_css(palette)
+                    log(f"[OK]  globals.css: kleurenpalet gegenereerd vanuit {primary}"
+                        + (f" + {secondary}" if secondary else ""))
+            except Exception as e:
+                log(f"[WARN] kleurenpalet genereren mislukt: {e}")
 
     header = '@import "tailwindcss";\n@plugin "daisyui";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n'
 
