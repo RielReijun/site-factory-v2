@@ -155,6 +155,11 @@ def create_cf_pages_project(token: str, account_id: str, project_name: str,
             "destination_dir": "/",
             "root_dir":        "/",
         },
+        # Cloudflare Next.js (Static HTML Export) preset — correct caching voor _next/static/
+        "deployment_configs": {
+            "preview":    {"compatibility_date": "2024-09-23"},
+            "production": {"compatibility_date": "2024-09-23"},
+        },
     }
     r = requests.post(
         f"{CF_API}/accounts/{account_id}/pages/projects",
@@ -235,6 +240,22 @@ def main():
     # Op Cloudflare staat de site op de root — basePath moet weg.
     project_dir = site_dir.parent  # /out/../ = het Next.js project
     next_config = project_dir / "next.config.ts"
+    if next_config.exists():
+        try:
+            # Voeg _headers toe voor correcte Cloudflare caching van Next.js assets
+            headers_file = site_dir / "_headers"
+            if not headers_file.exists():
+                headers_file.write_text(
+                    "/_next/static/*\n"
+                    "  Cache-Control: public, max-age=31536000, immutable\n\n"
+                    "/*.html\n"
+                    "  Cache-Control: public, max-age=0, must-revalidate\n",
+                    encoding="utf-8",
+                )
+                print("[INFO] _headers toegevoegd voor Next.js asset-caching")
+        except Exception:
+            pass
+
     if next_config.exists():
         try:
             cfg = next_config.read_text(encoding="utf-8")
