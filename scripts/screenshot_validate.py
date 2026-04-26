@@ -136,8 +136,15 @@ def main():
         if not f.name.startswith("_") and "_next" not in str(f)
     ]
     index = site_dir / "index.html"
-    skip  = {"legal.html", "404.html", "sitemap.html"}
-    rest  = [f for f in all_html if f != index and f.name not in skip]
+    # Skip op parent-directory voor Next.js nested routes (legal/index.html, 404/index.html)
+    skip_dirs  = {"legal", "404", "_not-found", "sitemap"}
+    skip_files = {"legal.html", "404.html", "sitemap.html"}
+    rest = [
+        f for f in all_html
+        if f != index
+        and f.name not in skip_files
+        and f.parent.name not in skip_dirs
+    ]
     random.shuffle(rest)
 
     def _url_for(html_path: "Path") -> str:

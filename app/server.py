@@ -171,28 +171,18 @@ def enrich_prospect(p: dict) -> dict:
     else:
         page_count = 0
 
-    # Readiness score — lees content_validation.json en screenshot_validation.json
+    # Readiness — lees quality_report.json (centrale bron) of fallback op losse bestanden
     readiness: dict = {}
     if site_dir.exists():
-        for val_file, key in [
-            ("content_validation.json", "content"),
-            ("screenshot_validation.json", "visual"),
-        ]:
-            vf = site_dir / val_file
-            if vf.exists():
-                try:
-                    vdata = json.loads(vf.read_text(encoding="utf-8"))
-                    if key == "content":
-                        readiness["content"] = "pass" if vdata.get("ready", vdata.get("ok")) else "fail"
-                        readiness["content_critical"] = vdata.get("critical", [])
-                    elif key == "visual":
-                        readiness["visual"] = "pass" if vdata.get("total_issues", 1) == 0 else "warn"
-                        readiness["visual_issues"] = vdata.get("total_issues", 0)
-                except Exception:
-                    pass
+        qr = site_dir / "quality_report.json"
+        if qr.exists():
+            try:
+                readiness = json.loads(qr.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        # Altijd aanvullen met actuele velden
         readiness["build"]  = "pass" if (site_dir / "index.html").exists() else "fail"
         readiness["routes"] = page_count
-        # review_status uit prospects.json
         readiness["review"] = p.get("review_status", "pending")
 
     return {

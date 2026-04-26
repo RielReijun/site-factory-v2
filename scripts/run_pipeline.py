@@ -1437,7 +1437,7 @@ def main():
         screenshot_json = validate_dir / "screenshot_validation.json"
         step_screenshot_validate(validate_dir, n, total, company_name)
 
-        # ── Screenshot-repair ──────────────────────────────────────────────────
+        # ── Screenshot-repair + hervalidatie ──────────────────────────────────
         if screenshot_json.exists():
             try:
                 shot_data = json.loads(screenshot_json.read_text(encoding="utf-8"))
@@ -1446,6 +1446,14 @@ def main():
                     log(f"[INFO] {shot_data['total_issues']} visuele issue(s) — screenshot-repair...")
                     step_repair_site(validate_dir, json_out, n, total, company_name,
                                      screenshot_json=screenshot_json)
+                    # Hervalideer na repair — weet of de fix werkte
+                    n += 1
+                    log("[INFO] Screenshot hervalidatie na repair...")
+                    shot_bak = validate_dir / "screenshot_validation_pre_repair.json"
+                    if screenshot_json.exists():
+                        import shutil as _sh
+                        _sh.copy2(str(screenshot_json), str(shot_bak))
+                    step_screenshot_validate(validate_dir, n, total, company_name)
                 else:
                     log("[INFO] Geen visuele issues — screenshot-repair overgeslagen")
             except Exception as e:
@@ -1472,27 +1480,73 @@ def main():
     except Exception as e:
         log(f"[WARN] Timings opslaan mislukt: {e}")
 
-    # Readiness gate: lees content_validation.json voor definitieve status
-    ready = True
-    content_val = validate_dir / "content_validation.json" if validate_dir.exists() else None
+    # ── Centrale quality_report.json + readiness gate ─────────────────────────
+    quality: dict = {"prospect": company_name, "checks": {}, "ready": True, "blockers": []}
+
+    # 1. Build
+    quality["checks"]["build"] = "pass" if (out_dir / "index.html").exists() else "fail"
+    if quality["checks"]["build"] == "fail":
+        quality["blockers"].append("Build mislukt — geen index.html")
+
+    # 2. Validate site (FAIL = blocker)
+    if json_out.exists():
+        try:
+            vdata = json.loads(json_out.read_text(encoding="utf-8"))
+            quality["checks"]["validate"] = "pass" if vdata.get("status") == "PASS" else "warn"
+        except Exception:
+            quality["checks"]["validate"] = "unknown"
+
+    # 3. Content — kritieke issues zijn blockers
+    content_val = out_dir / "content_validation.json" if out_dir.exists() else None
     if content_val and content_val.exists():
         try:
             cv = json.loads(content_val.read_text(encoding="utf-8"))
-            if cv.get("critical"):
-                ready = False
-                log(f"[WARN] Site heeft {len(cv['critical'])} kritieke content-issue(s) — status: needs_review")
+            critical = cv.get("critical", [])
+            quality["checks"]["content"] = "pass" if cv.get("ready") else "fail"
+            if critical:
+                quality["blockers"].extend(critical)
         except Exception:
-            pass
-
-    mark_site_done(company_name)
-    if not ready:
-        update_prospect(company_name, review_status="needs_review")
-        log("[INFO] Prospect gemarkeerd als needs_review — controleer content_validation.json")
+            quality["checks"]["content"] = "unknown"
     else:
-        update_prospect(company_name, review_status="ready")
-        log("[OK]  Readiness check geslaagd — site klaar voor presentatie")
+        quality["checks"]["content"] = "not_run"
 
-    write_status(running=False, prospect=company_name, step="done", result="ok" if ready else "needs_review")
+    # 4. Screenshot — issues na hervalidatie tellen mee
+    shot_json = out_dir / "screenshot_validation.json" if out_dir.exists() else None
+    if shot_json and shot_json.exists():
+        try:
+            sdata = json.loads(shot_json.read_text(encoding="utf-8"))
+            issues = sdata.get("total_issues", 0)
+            quality["checks"]["visual"] = "pass" if issues == 0 else "warn"
+            quality["visual_issues"] = issues
+        except Exception:
+            quality["checks"]["visual"] = "unknown"
+
+    # Definitieve readiness: alleen blockers bepalen of site done is
+    quality["ready"] = len(quality["blockers"]) == 0
+
+    # Sla quality report op
+    try:
+        if out_dir.exists():
+            (out_dir / "quality_report.json").write_text(
+                json.dumps(quality, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+    except Exception:
+        pass
+
+    ready = quality["ready"]
+    if ready:
+        log("[OK]  Quality gate geslaagd — site klaar voor presentatie")
+        mark_site_done(company_name)
+        update_prospect(company_name, review_status="ready")
+    else:
+        log(f"[WARN] Quality gate: {len(quality['blockers'])} blocker(s)")
+        for b in quality["blockers"]:
+            log(f"       - {b}")
+        log("[INFO] Site_status NIET op done gezet — handmatige review vereist")
+        update_prospect(company_name, site_status="needs_review", review_status="needs_review")
+
+    write_status(running=False, prospect=company_name, step="done",
+                 result="ready" if ready else "needs_review")
 
     log(f"\n{'═' * 60}")
     log(f"[OK] Pipeline voltooid voor: {company_name}")

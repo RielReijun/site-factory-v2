@@ -288,6 +288,7 @@
     /* Status top-border colors */
     .prospect-card.status-deployed     { border-top-color: var(--accent); }
     .prospect-card.status-done         { border-top-color: var(--green); }
+    .prospect-card.status-needs-review { border-top-color: var(--yellow); }
     .prospect-card.status-running      { border-top-color: #38bdf8; box-shadow: 0 0 0 1px #38bdf811; }
     .prospect-card.status-failed       { border-top-color: var(--red); }
     .prospect-card.status-insufficient { border-top-color: var(--yellow); }
@@ -1921,8 +1922,9 @@ function render(prospects) {
     // Status klasse voor linkerbalk + filter
     let statusClass = 'status-pending';
     let filterKey   = 'in-progress';
-    if (p.deploy_status === 'done' || p.github_url)          { statusClass = 'status-deployed'; filterKey = 'deployed'; }
-    else if (p.all_done)                                     { statusClass = 'status-done';     filterKey = 'done'; }
+    if (p.deploy_status === 'done' || p.github_url)          { statusClass = 'status-deployed';     filterKey = 'deployed'; }
+    else if (p.needs_review)                                 { statusClass = 'status-needs-review'; filterKey = 'done'; }
+    else if (p.all_done)                                     { statusClass = 'status-done';         filterKey = 'done'; }
     else if (p.status === 'failed')                          { statusClass = 'status-failed';   filterKey = 'failed'; }
     else if (p.status === 'insufficient')                    { statusClass = 'status-insufficient'; filterKey = 'failed'; }
     else if (p.status === 'pending')                         { statusClass = 'status-pending';  filterKey = 'in-progress'; }

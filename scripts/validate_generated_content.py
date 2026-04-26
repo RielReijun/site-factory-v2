@@ -121,13 +121,11 @@ def check_briefing_pages(site_dir: Path, collected_path: Path) -> list[str]:
     return warnings
 
 
-# Kritieke issues die de site NIET verkoopbaar maken — harde fails
+# Kritieke issues — matchen op de werkelijke warning-tekst die de functies produceren
 CRITICAL_PATTERNS = [
-    (r"bedrijfsnaam", "Bedrijfsnaam ontbreekt"),
-    (r"telefoon.*ontbreekt", "Telefoonnummer ontbreekt"),
-    (r"e-mail.*ontbreekt", "E-mailadres ontbreekt"),
-    (r"placeholder", "Placeholder-tekst gevonden"),
-    (r"pagina.*ontbreekt", "Verwachte pagina ontbreekt"),
+    r"niet gevonden in de gegenereerde site",  # naam/telefoon/email niet gevonden
+    r"ontbreekt in de gegenereerde site",       # pagina ontbreekt
+    r"placeholder",                             # placeholder tekst
 ]
 
 
@@ -157,7 +155,7 @@ def main():
 
     # Splits in kritieke failures en gewone waarschuwingen
     critical = [w for w in all_warnings if any(
-        re.search(p, w, re.IGNORECASE) for p, _ in CRITICAL_PATTERNS
+        re.search(p, w, re.IGNORECASE) for p in CRITICAL_PATTERNS
     )]
     warnings = [w for w in all_warnings if w not in critical]
 
