@@ -399,6 +399,38 @@ def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None
         log(f"[WARN] _patch_daisyui_theme: {e}")
 
 
+def _fix_nav_spacing(project_dir: Path) -> None:
+    """
+    Voeg gap toe aan nav-containers waar Claude dit vergeet.
+    Voorkomt aaneengesloten navigatie-items ('HomeOveronsDiensten').
+    """
+    layout = project_dir / "src" / "app" / "layout.tsx"
+    header = project_dir / "src" / "components" / "Header.tsx"
+    for tsx_path in [layout, header]:
+        if not tsx_path.exists():
+            continue
+        try:
+            c = tsx_path.read_text(encoding="utf-8")
+            orig = c
+            # Voeg gap-2 toe aan flex nav containers die het missen
+            import re as _re
+            c = _re.sub(
+                r'(className="[^"]*\bflex\b[^"]*\bnav\b[^"]*")(?![^"]*\bgap-)',
+                lambda m: m.group(0).replace('"', ' gap-1"', 1),
+                c,
+            )
+            # Specifiek: flex items-center zonder gap in nav context
+            c = _re.sub(
+                r'(<nav[^>]*className="[^"]*flex[^"]*items-center[^"]*")(?![^"]*gap)',
+                lambda m: m.group(0)[:-1] + ' gap-1"',
+                c,
+            )
+            if c != orig:
+                tsx_path.write_text(c, encoding="utf-8")
+        except Exception:
+            pass
+
+
 def _fix_icon_as_text(project_dir: Path) -> None:
     """
     Vervang gevallen waar Claude een Lucide-icoonnaam als tekst heeft geschreven,
@@ -1419,6 +1451,7 @@ def main():
         _fix_page_function_names(project_dir)
         _fix_daisyui_colors(project_dir)
         _fix_icon_as_text(project_dir)
+        _fix_nav_spacing(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
