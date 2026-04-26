@@ -353,7 +353,11 @@ _FAKE_LUCIDE_ICONS = {
 
 
 def _fix_lucide_icons(project_dir: Path) -> None:
-    """Vervang niet-bestaande Lucide icons door geldige alternatieven."""
+    """
+    Vervang niet-bestaande Lucide icons door geldige alternatieven.
+    Alleen in import-statements — niet in strings/object-keys om
+    bijwerkingen zoals eE-mail te voorkomen.
+    """
     fixed = 0
     for tsx in (project_dir / "src").rglob("*.tsx"):
         try:
@@ -362,8 +366,17 @@ def _fix_lucide_icons(project_dir: Path) -> None:
                 continue
             new = content
             for fake, replacement in _FAKE_LUCIDE_ICONS.items():
-                if fake in new:
-                    new = re.sub(rf"\b{fake}\b", replacement, new)
+                if fake not in new:
+                    continue
+                # Vervang alleen in lucide-react import-regels
+                new = re.sub(
+                    rf'(import\s*\{{[^}}]*)\b{re.escape(fake)}\b([^}}]*\}}\s*from\s*["\']lucide-react["\'])',
+                    lambda m, r=replacement: m.group(0).replace(fake, r),
+                    new,
+                )
+                # Vervang ook als JSX-component in de code (<Fake ... />)
+                new = re.sub(rf'<{re.escape(fake)}(\s|/>)', f'<{replacement}\\1', new)
+                new = re.sub(rf'</{re.escape(fake)}>', f'</{replacement}>', new)
             if new != content:
                 tsx.write_text(new, encoding="utf-8")
                 fixed += 1
