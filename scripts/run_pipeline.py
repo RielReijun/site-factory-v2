@@ -490,8 +490,9 @@ def _fix_globals_css(project_dir: Path) -> None:
 
 def _create_ui_components(project_dir: Path) -> None:
     """Schrijf essentiële shadcn-compatibele UI-componenten direct naar src/components/ui/."""
-    lib_dir = project_dir / "src" / "lib"
-    ui_dir  = project_dir / "src" / "components" / "ui"
+    src_dir = project_dir / "src"
+    lib_dir = src_dir / "lib"
+    ui_dir  = src_dir / "components" / "ui"
     lib_dir.mkdir(parents=True, exist_ok=True)
     ui_dir.mkdir(parents=True, exist_ok=True)
 
