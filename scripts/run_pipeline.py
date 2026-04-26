@@ -338,10 +338,17 @@ def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prosp
 
 
 _FAKE_LUCIDE_ICONS = {
+    # Social media icons (niet in Lucide)
     "Instagram": "Camera", "Facebook": "Globe", "Twitter": "MessageCircle",
     "Whatsapp": "MessageCircle", "WhatsApp": "MessageCircle", "TikTok": "Video",
     "Pinterest": "Image", "Snapchat": "Camera", "Youtube": "Play",
     "LinkedIn": "Briefcase", "Telegram": "Send",
+    # Nederlandse namen (Claude hallucineet soms Nederlands)
+    "Telefoon": "Phone", "Telefoonnummer": "Phone",
+    "Mail": "Mail",  # Mail bestaat wel, maar voor de zekerheid
+    "E-mail": "Mail", "Email": "Mail",
+    "Adres": "MapPin", "Locatie": "MapPin",
+    "Website": "Globe", "Klok": "Clock", "Sterren": "Star",
 }
 
 
