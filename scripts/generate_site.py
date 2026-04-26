@@ -75,6 +75,20 @@ Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
 Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
 Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
 {impeccable_section}{image_section}
+## DaisyUI — gebruik semantische component-klassen voor rijkere layouts
+DaisyUI klassen zijn beschikbaar. Gebruik ze vrijuit naast Tailwind:
+- `btn btn-primary`, `btn-outline`, `btn-ghost` — knoppen
+- `card card-body card-title` — kaarten
+- `badge badge-primary` — labels
+- `hero hero-content` — hero-secties
+- `navbar`, `menu`, `drawer` — navigatie
+- `accordion`, `collapse` — uitklapbare content
+- `stat stat-title stat-value stat-desc` — statistieken
+- `timeline`, `steps`, `progress` — voortgang
+- `table table-zebra` — tabellen en prijslijsten
+- `divider` — scheidingslijn
+- `rating` — sterren
+
 ## Beschikbare libraries — gebruik deze altijd boven custom implementaties
 - **shadcn/ui**: `import {{ Accordion, AccordionItem, AccordionTrigger, AccordionContent }} from "@/components/ui/accordion"` — gebruik ALTIJD voor FAQ secties
 - **shadcn/ui**: `import {{ Card, CardHeader, CardTitle, CardContent }} from "@/components/ui/card"` — voor kaarten

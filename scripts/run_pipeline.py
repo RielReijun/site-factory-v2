@@ -1363,13 +1363,14 @@ def main():
         # Patch data-theme in layout.tsx op basis van het gekozen DaisyUI-theme
         _patch_daisyui_theme(project_dir, collected_path)
 
-        # ── Fase 2: homepage via component registry ───────────────────────────
+        # ── Fase 2: homepage — vrije TSX-generatie door Claude ───────────────
         n += 1
         write_status(running=True, prospect=company_name, step="generate:home", step_n=n, total=total)
-        ok, label, lines = _plan_and_assemble(
-            briefing_path, company_name,
-            "home", "Homepage", "Hoofdpagina van de site",
-            image_manifest, nav_routes, project_dir, is_homepage=True,
+        ok, label, lines = _run_unit_buffered(
+            briefing_path, company_name, "home",
+            OUTPUT_DIR / f"{slug}-home.txt",
+            None, "", "", "",
+            image_manifest, nav_routes, project_dir,
         )
         for line in lines:
             log(line)
@@ -1377,7 +1378,11 @@ def main():
             write_status(running=False, prospect=company_name, step="generate:home", result="failed")
             sys.exit(1)
 
-        # ── Fase 3: subpagina's parallel via component registry ───────────────
+        # Homepage TSX als referentie voor subpagina's
+        home_tsx = project_dir / "src" / "app" / "page.tsx"
+        ref_tsx  = home_tsx if home_tsx.exists() else None
+
+        # ── Fase 3: subpagina's parallel — vrije TSX-generatie door Claude ───
         failed_units: list[str] = []
         batch_start = time.monotonic()
         write_status(running=True, prospect=company_name, step="generate:parallel", step_n=n, total=total)
@@ -1385,11 +1390,12 @@ def main():
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = {
                 executor.submit(
-                    _plan_and_assemble,
-                    briefing_path, company_name,
-                    ps, pt, pd,
+                    _run_unit_buffered,
+                    briefing_path, company_name, "page",
+                    OUTPUT_DIR / f"{slug}-{ps}.txt",
+                    ref_tsx, ps, pt, pd,
                     image_manifest, nav_routes,
-                    project_dir, False,
+                    project_dir,
                 ): ps
                 for _, _, ps, pt, pd in page_units
             }
