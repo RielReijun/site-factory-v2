@@ -399,6 +399,20 @@ def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None
         log(f"[WARN] _patch_daisyui_theme: {e}")
 
 
+def _fix_page_function_names(project_dir: Path) -> None:
+    """Fix functienamen die beginnen met een cijfer (bijv. 360TourPage → TourPage360)."""
+    import re as _re
+    for tsx in (project_dir / "src" / "app").rglob("*.tsx"):
+        try:
+            c = tsx.read_text(encoding="utf-8")
+            fixed = _re.sub(r'function (\d+)(\w+)\(\)', lambda m: f'function {m.group(2)}{m.group(1)}()', c)
+            if fixed != c:
+                tsx.write_text(fixed, encoding="utf-8")
+                log(f"[OK]  {tsx.name}: functienaam gecorrigeerd (begon met cijfer)")
+        except Exception:
+            pass
+
+
 def _fix_layout_tsx(project_dir: Path) -> None:
     """
     Repareer veelvoorkomende syntax-problemen in layout.tsx:
@@ -415,6 +429,19 @@ def _fix_layout_tsx(project_dir: Path) -> None:
             if fixed != c:
                 layout.write_text(fixed, encoding="utf-8")
                 log("[OK]  layout.tsx: className syntax gerepareerd")
+        except Exception:
+            pass
+
+    # Fix ongeldige Google Font weights (Lato heeft geen 500, 600)
+    layout = project_dir / "src" / "app" / "layout.tsx"
+    if layout.exists():
+        try:
+            c = layout.read_text(encoding="utf-8")
+            # Lato: alleen 100, 300, 400, 700, 900
+            fixed = re.sub(r'"(500|600)"(\s*,?\s*(?:\/\/[^\n]*)?\s*(?=\]))', lambda m: '"400"' + m.group(2), c)
+            if fixed != c:
+                layout.write_text(fixed, encoding="utf-8")
+                log("[OK]  layout.tsx: ongeldige font weight gecorrigeerd (500→400)")
         except Exception:
             pass
 
@@ -1346,6 +1373,7 @@ def main():
 
         # Nog een keer Lucide icons fixen — pages worden na layout gegenereerd
         _fix_lucide_icons(project_dir)
+        _fix_page_function_names(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
