@@ -1488,13 +1488,22 @@ def main():
     if quality["checks"]["build"] == "fail":
         quality["blockers"].append("Build mislukt — geen index.html")
 
-    # 2. Validate site (FAIL = blocker)
+    # 2. Validate site — niet-PASS is een blocker
     if json_out.exists():
         try:
             vdata = json.loads(json_out.read_text(encoding="utf-8"))
-            quality["checks"]["validate"] = "pass" if vdata.get("status") == "PASS" else "warn"
+            passed = vdata.get("status") == "PASS"
+            quality["checks"]["validate"] = "pass" if passed else "fail"
+            if not passed:
+                failures = [i["message"] for i in vdata.get("issues", []) if i.get("level") == "FAIL"]
+                if failures:
+                    quality["blockers"].extend(failures[:3])
+                else:
+                    quality["blockers"].append("validate_generated_site niet geslaagd")
         except Exception:
             quality["checks"]["validate"] = "unknown"
+    else:
+        quality["checks"]["validate"] = "not_run"
 
     # 3. Content — kritieke issues zijn blockers
     content_val = out_dir / "content_validation.json" if out_dir.exists() else None
@@ -1509,17 +1518,28 @@ def main():
             quality["checks"]["content"] = "unknown"
     else:
         quality["checks"]["content"] = "not_run"
+        quality["blockers"].append("Content-check niet uitgevoerd")
 
-    # 4. Screenshot — issues na hervalidatie tellen mee
+    # 4. Screenshot — issues na hervalidatie zijn blockers (post-repair = definitief)
     shot_json = out_dir / "screenshot_validation.json" if out_dir.exists() else None
     if shot_json and shot_json.exists():
         try:
             sdata = json.loads(shot_json.read_text(encoding="utf-8"))
             issues = sdata.get("total_issues", 0)
-            quality["checks"]["visual"] = "pass" if issues == 0 else "warn"
+            quality["checks"]["visual"] = "pass" if issues == 0 else "fail"
             quality["visual_issues"] = issues
+            if issues > 0:
+                # Visuele problemen na repair zijn blockers
+                all_issues = [i for p in sdata.get("results", []) for i in p.get("issues", [])]
+                quality["blockers"].extend(all_issues[:3])
+                if len(all_issues) > 3:
+                    quality["blockers"].append(f"... en {len(all_issues) - 3} andere visuele issue(s)")
         except Exception:
             quality["checks"]["visual"] = "unknown"
+    else:
+        # Screenshot niet gedraaid = onbekend risico = blocker
+        quality["checks"]["visual"] = "not_run"
+        quality["blockers"].append("Screenshot-validatie niet uitgevoerd — visuele kwaliteit onbekend")
 
     # Definitieve readiness: alleen blockers bepalen of site done is
     quality["ready"] = len(quality["blockers"]) == 0
