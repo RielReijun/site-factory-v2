@@ -406,6 +406,53 @@ def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None
         log(f"[WARN] _patch_daisyui_theme: {e}")
 
 
+def _fix_client_components(project_dir: Path) -> None:
+    """
+    Voeg 'use client' toe aan pages met event handlers of interactieve componenten.
+    Verwijder metadata exports uit client components (niet toegestaan in Next.js App Router).
+    """
+    import re as _re
+    app_dir = project_dir / "src" / "app"
+    if not app_dir.exists():
+        return
+
+    CLIENT_KEYWORDS = [
+        "onMouse", "onClick", "onChange", "onSubmit", "onFocus", "onBlur",
+        "useState", "useEffect", "useRef", "useCallback", "useMemo",
+        "LeafletMap", "GalleryCarousel", "BookingWidget", "Sheet",
+    ]
+    METADATA_RE = _re.compile(
+        r'\nexport const metadata(?:\s*:\s*\w+)?\s*=\s*\{.*?\};\s*\n',
+        _re.DOTALL,
+    )
+    METADATA_IMPORT_RE = _re.compile(
+        r'import (?:type )?\{ [^}]*Metadata[^}]* \} from [^\n]+\n'
+    )
+
+    for tsx in sorted(app_dir.rglob("*/page.tsx")):
+        try:
+            c = tsx.read_text(encoding="utf-8", errors="ignore")
+            orig = c
+            is_client = c.startswith('"use client"')
+
+            # Voeg use client toe als interactieve keywords aanwezig zijn
+            if not is_client and any(kw in c for kw in CLIENT_KEYWORDS):
+                c = '"use client";\n' + c
+                is_client = True
+
+            # Verwijder metadata export uit client components
+            if is_client and "export const metadata" in c:
+                c = METADATA_RE.sub("\n", c)
+                # Verwijder Metadata import als niet meer gebruikt
+                if "Metadata" not in c.replace("import", ""):
+                    c = METADATA_IMPORT_RE.sub("", c)
+
+            if c != orig:
+                tsx.write_text(c, encoding="utf-8")
+        except Exception:
+            pass
+
+
 def _fix_nav_spacing(project_dir: Path) -> None:
     """
     Voeg gap toe aan nav-containers waar Claude dit vergeet.
@@ -1459,6 +1506,7 @@ def main():
         _fix_daisyui_colors(project_dir)
         _fix_icon_as_text(project_dir)
         _fix_nav_spacing(project_dir)
+        _fix_client_components(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
