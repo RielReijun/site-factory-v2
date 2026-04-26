@@ -514,12 +514,10 @@ def _fix_invalid_style_props(project_dir: Path) -> None:
         log(f"[OK]  TypeScript fix: {fixed} bestand(en) met ongeldige style-props gerepareerd")
 
 
-def _fix_globals_css(project_dir: Path) -> None:
+def _fix_globals_css(project_dir: Path, collected_path: Path | None = None) -> None:
     """
-    Vervang Tailwind v3 syntax in globals.css door v4.
-    Claude genereert keer op keer @tailwind base/components/utilities,
-    maar Next.js 16 gebruikt Tailwind v4 waar alleen @import werkt.
-    Dit is een deterministische post-processing stap.
+    Vervang Tailwind v3 syntax door v4, activeer DaisyUI en injecteer merkkleur
+    uit de briefing als CSS-variabelen.
     """
     css_path = project_dir / "src" / "app" / "globals.css"
     if not css_path.exists():
@@ -531,21 +529,47 @@ def _fix_globals_css(project_dir: Path) -> None:
     has_import = "@import" in css and "tailwindcss" in css
     has_v3     = "@tailwind base" in css or "@tailwind components" in css or "@tailwind utilities" in css
 
+    # Extraheer merkkleur uit briefing als die beschikbaar is
+    brand_css = ""
+    if collected_path:
+        briefing_file = collected_path / "briefing.md"
+        if briefing_file.exists():
+            brief = briefing_file.read_text(encoding="utf-8", errors="ignore")
+            colors = {}
+            for label, var in [
+                ("Primaire kleur", "--color-primary"),
+                ("Secundaire kleur", "--color-secondary"),
+                ("Achtergrond", "--color-base-100"),
+                ("Tekst", "--color-base-content"),
+            ]:
+                m = re.search(rf"{label}[:\s]+(#[0-9a-fA-F]{{3,6}})", brief)
+                if m:
+                    colors[var] = m.group(1)
+            if colors:
+                vars_str = "\n  ".join(f"{k}: {v};" for k, v in colors.items())
+                # Zet ook neutral op primary-kleur zodat footer altijd klopt
+                if "--color-primary" in colors:
+                    vars_str += f"\n  --color-neutral: {colors['--color-primary']};"
+                    vars_str += f"\n  --color-neutral-content: {colors.get('--color-base-100', '#FAF7F2')};"
+                    vars_str += f"\n  --color-primary-content: {colors.get('--color-base-100', '#FAF7F2')};"
+                brand_css = f"\n/* Merkspecifieke kleuren uit briefing */\n[data-theme=\"brand\"], :root {{\n  {vars_str}\n}}\n"
+                log(f"[OK]  globals.css: merkkleur uit briefing geladen ({len(colors)} vars)")
+
     header = '@import "tailwindcss";\n@plugin "daisyui";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n'
 
     if has_v3 and not has_import:
         css = re.sub(r'@tailwind\s+\w+;\s*\n?', '', css)
-        css = header + css.lstrip()
+        css = header + css.lstrip() + brand_css
         css_path.write_text(css, encoding="utf-8")
-        log("[OK]  globals.css: v3→v4 + DaisyUI geactiveerd")
+        log("[OK]  globals.css: v3→v4 + DaisyUI + merkkleur")
     elif not has_v3 and not has_import:
-        css_path.write_text(header + css, encoding="utf-8")
-        log("[OK]  globals.css: Tailwind v4 + DaisyUI toegevoegd")
+        css_path.write_text(header + css + brand_css, encoding="utf-8")
+        log("[OK]  globals.css: Tailwind v4 + DaisyUI + merkkleur")
     elif "daisyui" not in css:
         css = css.replace('@import "tailwindcss";',
                           '@import "tailwindcss";\n@plugin "daisyui";')
-        css_path.write_text(css, encoding="utf-8")
-        log("[OK]  globals.css: DaisyUI plugin toegevoegd")
+        css_path.write_text(css + brand_css, encoding="utf-8")
+        log("[OK]  globals.css: DaisyUI + merkkleur toegevoegd")
 
 
 def _create_ui_components(project_dir: Path) -> None:
@@ -1336,8 +1360,8 @@ def main():
             write_status(running=False, prospect=company_name, step="generate:layout", result="failed")
             sys.exit(1)
 
-        # Patch globals.css na layout-generatie (Tailwind v3→v4 + DaisyUI)
-        _fix_globals_css(project_dir)
+        # Patch globals.css na layout-generatie (Tailwind v3→v4 + DaisyUI + merkkleur)
+        _fix_globals_css(project_dir, collected_path)
 
         # Fix hallucinated Lucide icons die niet bestaan
         _fix_lucide_icons(project_dir)
