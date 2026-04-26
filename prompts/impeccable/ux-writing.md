@@ -105,3 +105,30 @@ Show format with placeholders, not instructions. For non-obvious fields, explain
 ---
 
 **Avoid**: Jargon without explanation. Blaming users ("You made an error" → "This field is required"). Vague errors ("Something went wrong"). Varying terminology for variety. Humor for errors.
+
+---
+
+## Anti-Patterns: Interpunctie en typografie in lopende tekst
+
+### Em-dash (—) — NOOIT gebruiken in lopende tekst
+De em-dash is een Engelse typografische gewoonte die in Nederlandse webteksten formeel en afstandelijk aanvoelt.
+
+**Fout:**
+> Wij knippen haar — voor dames, heren en kinderen.
+
+**Goed:**
+> Wij knippen haar voor dames, heren en kinderen.
+
+**Fout:**
+> Maak een afspraak — bel ons of gebruik het formulier.
+
+**Goed:**
+> Maak een afspraak: bel ons of gebruik het formulier.
+
+Gebruik in plaats van em-dash:
+- Een **komma** voor bijzinnen
+- Een **dubbele punt** voor toelichtingen
+- Een **punt** voor een nieuwe zin
+- **Haakjes** voor terzijdes
+
+Dit geldt voor alle kopij op de site: hero-teksten, sectie-beschrijvingen, knoppen, footers.

@@ -129,6 +129,7 @@ Openingstijden zijn kritisch voor lokale bedrijven. Als de briefing ze noemt:
 - Tailwind responsive: mobile-first, gebruik `md:` en `lg:` prefixes
 
 ## Design principes (anti-patronen vermijden)
+- NOOIT em-dashes (—) in kopij — gebruik een komma, dubbele punt of nieuwe zin
 - GEEN Inter als enige font — combineer met een serif of display font
 - GEEN grijze tekst op gekleurde achtergrond
 - GEEN cards genest in cards
