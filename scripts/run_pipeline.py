@@ -1429,7 +1429,7 @@ def main():
         n += 1
         content_ok = step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
         if not content_ok:
-            log("[WARN] Content-check heeft kritieke issues — site wordt gemarkeerd als needs_review")
+            log("[WARN] Content-check heeft kritieke issues — auto_repair wordt getriggerd")
             update_prospect(company_name, ready_for_review=False, content_issues=True)
 
         # ── Screenshot-validatie ───────────────────────────────────────────────
@@ -1580,7 +1580,7 @@ def main():
             except Exception:
                 pass
 
-        fixed = run_repair_cycle(
+        repair_result = run_repair_cycle(
             blockers=quality["blockers"],
             site_dir=validate_dir,
             collected_path=collected_path,
@@ -1593,27 +1593,30 @@ def main():
             screenshot_json=shot_json if shot_json.exists() else None,
             log_fn=log,
         )
-        log(f"[INFO] Repair ronde {repair_round + 1}: {sum(fixed.values())} actie(s) ondernomen")
+        actions_done = len([a for a in repair_result["actions"] if a["ok"]])
+        log(f"[INFO] Repair ronde {repair_round + 1}: {actions_done}/{len(repair_result['actions'])} actie(s) geslaagd")
 
-        # Hervalideer na repair (screenshot herdraaien als visuele issues waren)
-        has_visual = any("visueel" in b.lower() or "contrast" in b.lower() or "screenshot" in b.lower()
-                         for b in quality["blockers"])
-        if has_visual:
+        # ── Correcte hervalidatie-volgorde ────────────────────────────────────
+        # 1. Rebuild als TSX gewijzigd (tsx_regen) — EERST, anders stale /out
+        if repair_result["needs_rebuild"]:
             n += 1
-            log("[INFO] Screenshot hervalidatie na auto-repair...")
-            step_screenshot_validate(validate_dir, n, total, company_name)
+            log("[INFO] Rebuild na TSX-wijziging...")
+            if not step_build_nextjs(project_dir, n, total, company_name):
+                log("[WARN] Rebuild mislukt na repair — quality check op huidige /out")
 
-        # Content-check opnieuw
+        # 2. Validate site opnieuw (leest /out na eventuele rebuild)
+        n += 1
+        step_validate_site(validate_dir, json_out, n, total, company_name)
+
+        # 3. Content-check opnieuw (kijkt naar /out na rebuild)
         n += 1
         step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
 
-        # Rebuild als er nieuwe TSX-bestanden zijn
-        has_regen = any(t in fixed for t in ("missing_page", "visual_issue"))
-        if has_regen:
+        # 4. Screenshot opnieuw als visuele actie was ondernomen
+        if repair_result["needs_screenshot"]:
             n += 1
-            log("[INFO] Rebuild na pagina-regeneratie...")
-            if not step_build_nextjs(project_dir, n, total, company_name):
-                log("[WARN] Rebuild na repair mislukt — quality check op huidige /out")
+            log("[INFO] Screenshot hervalidatie na visuele repair...")
+            step_screenshot_validate(validate_dir, n, total, company_name)
 
     # ── Definitieve status ─────────────────────────────────────────────────────
     ready = quality["ready"]

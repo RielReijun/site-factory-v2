@@ -61,13 +61,23 @@ def classify_blocker(blocker: str) -> dict:
 # ── Repair-acties ─────────────────────────────────────────────────────────────
 
 def repair_content_missing(classified: dict, site_dir: Path, collected_path: Path) -> bool:
-    """Injecteer ontbrekende contactinfo uit facts.json direct in HTML-bestanden."""
-    facts_path = collected_path / "facts.json"
-    if not facts_path.exists():
-        return False
-    try:
-        facts = json.loads(facts_path.read_text(encoding="utf-8"))
-    except Exception:
+    """Injecteer ontbrekende contactinfo uit facts.json of structured_data.json in HTML."""
+    # Probeer facts.json (nieuw), fallback op structured_data.json (oud)
+    facts: dict = {}
+    for fname in ("facts.json", "structured_data.json"):
+        fpath = collected_path / fname
+        if fpath.exists():
+            try:
+                raw = json.loads(fpath.read_text(encoding="utf-8"))
+                if fname == "structured_data.json":
+                    contact = raw.get("contact", {})
+                    facts = {"phone": contact.get("phone", ""), "email": contact.get("email", "")}
+                else:
+                    facts = raw
+                break
+            except Exception:
+                continue
+    if not facts:
         return False
 
     field = classified.get("field", "")
@@ -248,43 +258,74 @@ def run_repair_cycle(
     round_num: int,
     screenshot_json: Path | None = None,
     log_fn=print,
-) -> dict[str, int]:
+) -> dict:
     """
     Voer één repair-ronde uit voor de opgegeven blockers.
-    Geeft {type: count_fixed} terug.
+
+    Geeft terug:
+      {
+        "actions": [{"type": ..., "action_kind": ..., "ok": bool}],
+        "needs_rebuild": bool,   # TSX gewijzigd → rebuild vereist
+        "needs_screenshot": bool # visuele actie → screenshot herhalen
+      }
+
+    action_kind:
+      "tsx_regen"   — TSX-bestand gewijzigd, rebuild vereist
+      "html_patch"  — HTML direct gepatcht, geen rebuild
+      "css_patch"   — CSS geïnjecteerd in /out HTML, geen rebuild
+      "safe_fallback" — veilige CSS in /out HTML, geen rebuild
     """
-    fixed: dict[str, int] = {}
+    result: dict = {
+        "actions": [],
+        "needs_rebuild": False,
+        "needs_screenshot": False,
+    }
     classified = [classify_blocker(b) for b in blockers]
 
     for item in classified:
         btype = item["type"]
         log_fn(f"[INFO] auto_repair: {btype} — {item['details'][:80]}")
+        action: dict = {"type": btype, "details": item["details"], "action_kind": "unknown", "ok": False}
 
         if btype == "content_missing":
             ok = repair_content_missing(item, site_dir, collected_path)
-            log_fn(f"  → content_missing: {'gefixed' if ok else 'mislukt'}")
-            if ok:
-                fixed[btype] = fixed.get(btype, 0) + 1
+            action["action_kind"] = "html_patch"
+            action["ok"] = ok
+            log_fn(f"  → content_missing: {'gefixed (html_patch)' if ok else 'mislukt'}")
 
         elif btype == "missing_page":
             ok = repair_missing_page(item, briefing_path, company_name,
                                      project_dir, image_manifest, nav_routes)
-            log_fn(f"  → missing_page '{item.get('page')}': {'gefixed' if ok else 'mislukt'}")
+            action["action_kind"] = "tsx_regen"
+            action["ok"] = ok
             if ok:
-                fixed[btype] = fixed.get(btype, 0) + 1
+                result["needs_rebuild"] = True
+            log_fn(f"  → missing_page '{item.get('page')}': {'tsx_regen' if ok else 'mislukt'}")
 
         elif btype == "visual_issue":
             ok = repair_visual_issue(item, site_dir, screenshot_json,
                                      briefing_path, company_name, project_dir, round_num)
-            log_fn(f"  → visual_issue (round {round_num}): {'gefixed' if ok else 'mislukt'}")
-            if ok:
-                fixed[btype] = fixed.get(btype, 0) + 1
+            # Round 1 = css_patch, round 2 = tsx_regen (page regen), round 3+ = safe_fallback
+            if round_num == 1:
+                action["action_kind"] = "css_patch"
+            elif round_num == 2:
+                action["action_kind"] = "tsx_regen"
+                if ok:
+                    result["needs_rebuild"] = True
+            else:
+                action["action_kind"] = "safe_fallback"
+            action["ok"] = ok
+            result["needs_screenshot"] = True
+            log_fn(f"  → visual_issue ({action['action_kind']}): {'ok' if ok else 'mislukt'}")
 
         elif btype in ("build_failed", "validate_failed"):
-            # Laat de bestaande auto-fixes in run_pipeline.py dit afhandelen
+            action["action_kind"] = "pipeline_autofix"
+            action["ok"] = False  # pipeline auto-fix handelt dit af
             log_fn(f"  → {btype}: overgedragen aan pipeline auto-fix")
 
         else:
-            log_fn(f"  → unknown blocker: geen automatische actie mogelijk")
+            log_fn(f"  → unknown blocker: geen actie")
 
-    return fixed
+        result["actions"].append(action)
+
+    return result
