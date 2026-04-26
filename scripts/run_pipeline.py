@@ -399,6 +399,44 @@ def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None
         log(f"[WARN] _patch_daisyui_theme: {e}")
 
 
+def _fix_icon_as_text(project_dir: Path) -> None:
+    """
+    Vervang gevallen waar Claude een Lucide-icoonnaam als tekst heeft geschreven,
+    bijv. 'Stuur een MessageCircle-bericht' → 'Stuur een WhatsApp-bericht'.
+    """
+    import re as _re
+    ICON_TEXT_RE = _re.compile(
+        r'\b(Phone|Mail|MapPin|MessageCircle|ArrowRight|ChevronRight|Globe|ExternalLink)'
+        r'[-\s]?(bericht|link|knop|icoon|icon|button)?\b',
+        _re.IGNORECASE,
+    )
+    REPLACEMENTS = {
+        "messagecircle": "WhatsApp",
+        "phone": "Telefoon",
+        "mail": "E-mail",
+        "mappin": "Adres",
+        "globe": "Website",
+        "externallink": "Bekijk",
+    }
+    for tsx in (project_dir / "src").rglob("*.tsx"):
+        try:
+            c = tsx.read_text(encoding="utf-8")
+            orig = c
+            # Alleen in string-content (JSX tekst), niet in import/tag namen
+            # Zoek op patronen zoals: Stuur een MessageCircle-bericht
+            for pat, repl in REPLACEMENTS.items():
+                c = _re.sub(
+                    rf'(Stuur een |Bel via |via |een )?{pat}(-bericht|-link|-knop)?\b',
+                    repl,
+                    c,
+                    flags=_re.IGNORECASE,
+                )
+            if c != orig:
+                tsx.write_text(c, encoding="utf-8")
+        except Exception:
+            pass
+
+
 def _fix_daisyui_colors(project_dir: Path) -> None:
     """
     Vervang niet-bestaande CSS-klassen door DaisyUI semantische klassen.
@@ -1380,6 +1418,7 @@ def main():
         _fix_lucide_icons(project_dir)
         _fix_page_function_names(project_dir)
         _fix_daisyui_colors(project_dir)
+        _fix_icon_as_text(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
