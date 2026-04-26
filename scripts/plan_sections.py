@@ -16,9 +16,68 @@ from component_registry import get_schema_description
 from pipeline_utils import get_model, with_retry
 
 
+DAISYUI_THEMES = [
+    "light", "dark", "cupcake", "bumblebee", "emerald", "corporate",
+    "retro", "garden", "forest", "aqua", "lofi", "pastel",
+    "luxury", "dracula", "autumn", "business", "coffee", "winter",
+    "dim", "nord", "sunset", "lemonade",
+]
+
+
+def pick_theme(client, model: str, briefing: str) -> str:
+    """Laat Claude het beste DaisyUI-theme kiezen op basis van de briefing."""
+    prompt = f"""Kies het beste DaisyUI-theme voor deze website op basis van de briefing.
+
+Beschikbare themes en hun sfeer:
+- light: neutraal/clean
+- dark: donker/professioneel
+- cupcake: zacht/roze/vrouwelijk
+- bumblebee: geel/energiek
+- emerald: groen/fris
+- corporate: blauw/zakelijk
+- retro: warm/vintage
+- garden: aards/natuur
+- forest: donkergroen/natuur
+- aqua: blauw/water/zwembad
+- lofi: minimaal/rustig
+- pastel: zachte kleuren/lief
+- luxury: goud/donker/exclusief
+- dracula: paars/donker/modern
+- autumn: warm/herfstkleuren
+- business: grijs/zakelijk
+- coffee: bruin/warm/gezellig
+- winter: koel/blauw/fris
+- dim: gedempte donkere tinten
+- nord: nordic/minimaal/koel
+- sunset: oranje/roze/warm
+- lemonade: geel/fris/zomers
+
+Briefing:
+{briefing[:3000]}
+
+Geef ALLEEN de theme-naam terug, geen uitleg."""
+
+    try:
+        response = with_retry(
+            lambda: client.messages.create(
+                model=model, max_tokens=20,
+                messages=[{"role": "user", "content": prompt}]
+            ),
+            label="pick_theme",
+        )
+        theme = "".join(b.text for b in response.content
+                        if getattr(b, "type", None) == "text").strip().lower()
+        if theme in DAISYUI_THEMES:
+            return theme
+    except Exception:
+        pass
+    return "light"
+
+
 def plan_page(client, model: str, briefing: str, page_slug: str,
               page_title: str, page_desc: str, images: list[str],
-              nav_pages: list[str], is_homepage: bool = False) -> dict:
+              nav_pages: list[str], is_homepage: bool = False,
+              theme: str = "light") -> dict:
     """Vraag Claude om een JSON-sectieplan voor één pagina."""
 
     schema = get_schema_description()
@@ -79,7 +138,10 @@ Regels:
     raw = re.sub(r'\s*```\s*$', '', raw, flags=re.MULTILINE)
 
     try:
-        return json.loads(raw.strip())
+        plan = json.loads(raw.strip())
+        if theme:
+            plan["theme"] = theme
+        return plan
     except json.JSONDecodeError as e:
         raise ValueError(f"Ongeldige JSON van Claude voor {page_slug}: {e}\n{raw[:300]}")
 
@@ -119,7 +181,24 @@ def main():
     client = Anthropic(api_key=api_key)
     model  = get_model()
 
-    print(f"[INFO] Sectieplan genereren voor: {args.page_slug} ({'homepage' if args.homepage else 'subpagina'})")
+    # Theme bepalen (alleen voor homepage, wordt gedeeld met alle pagina's)
+    theme = ""
+    if args.homepage:
+        theme_file = Path(args.brief).parent / "theme.json"
+        if theme_file.exists():
+            theme = json.loads(theme_file.read_text()).get("theme", "")
+        if not theme:
+            print(f"[INFO] DaisyUI theme kiezen...")
+            theme = pick_theme(client, model, briefing)
+            theme_file.write_text(json.dumps({"theme": theme}), encoding="utf-8")
+            print(f"[OK]  Theme gekozen: {theme}")
+    else:
+        # Gebruik bestaand theme van homepage
+        theme_file = Path(args.brief).parent / "theme.json"
+        if theme_file.exists():
+            theme = json.loads(theme_file.read_text()).get("theme", "light")
+
+    print(f"[INFO] Sectieplan genereren voor: {args.page_slug} ({'homepage' if args.homepage else 'subpagina'}) | theme: {theme}")
 
     plan = plan_page(
         client, model, briefing,
@@ -129,6 +208,7 @@ def main():
         images=images,
         nav_pages=nav_pages,
         is_homepage=args.homepage,
+        theme=theme,
     )
 
     out_path = Path(args.out)

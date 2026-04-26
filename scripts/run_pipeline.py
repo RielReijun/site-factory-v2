@@ -316,10 +316,11 @@ def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prosp
     _run_in_project(
         ["npm", "install",
          "lucide-react",
+         "daisyui",
          "tailwindcss-animate",
          "@tailwindcss/typography",
          "@tailwindcss/forms"],
-        "npm packages installeren (lucide + tailwind plugins)",
+        "npm packages installeren (lucide + daisyui + tailwind plugins)",
     )
 
     # shadcn-stijl componenten direct aanmaken (geen init nodig)
@@ -357,6 +358,39 @@ def _fix_lucide_icons(project_dir: Path) -> None:
             pass
     if fixed:
         log(f"[OK]  Lucide icon fix: {fixed} bestand(en) gecorrigeerd")
+
+
+def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None:
+    """Zet data-theme op het <html> element in layout.tsx."""
+    theme = "light"
+    if collected_path:
+        theme_file = collected_path / "theme.json"
+        if theme_file.exists():
+            try:
+                theme = json.loads(theme_file.read_text()).get("theme", "light")
+            except Exception:
+                pass
+
+    layout = project_dir / "src" / "app" / "layout.tsx"
+    if not layout.exists():
+        return
+    try:
+        c = layout.read_text(encoding="utf-8")
+        # Vervang of voeg data-theme toe op <html> element
+        new = re.sub(
+            r'<html([^>]*?)>',
+            lambda m: f'<html{m.group(1)} data-theme="{theme}">'
+            if f'data-theme' not in m.group(1)
+            else re.sub(r'data-theme="[^"]*"', f'data-theme="{theme}"', m.group(0)),
+            c, count=1
+        )
+        if new != c:
+            layout.write_text(new, encoding="utf-8")
+            log(f"[OK]  layout.tsx: data-theme=\"{theme}\" gezet")
+        else:
+            log(f"[INFO] layout.tsx: data-theme al aanwezig of <html> niet gevonden")
+    except Exception as e:
+        log(f"[WARN] _patch_daisyui_theme: {e}")
 
 
 def _fix_layout_tsx(project_dir: Path) -> None:
@@ -431,43 +465,21 @@ def _fix_globals_css(project_dir: Path) -> None:
     has_import = "@import" in css and "tailwindcss" in css
     has_v3     = "@tailwind base" in css or "@tailwind components" in css or "@tailwind utilities" in css
 
-    if has_v3 and not has_import:
-        # Verwijder alle @tailwind regels
-        css = re.sub(r'@tailwind\s+\w+;\s*\n?', '', css)
-        # Voeg v4 import bovenaan toe
-        css = '@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n' + css.lstrip()
-        css_path.write_text(css, encoding="utf-8")
-        log("[OK]  globals.css gepatcht: @tailwind → @import tailwindcss (v4)")
-    elif not has_v3 and not has_import:
-        # Helemaal geen Tailwind directives — toevoegen
-        css_path.write_text('@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n' + css, encoding="utf-8")
-        log("[OK]  globals.css: Tailwind v4 import toegevoegd")
+    header = '@import "tailwindcss";\n@plugin "daisyui";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n'
 
-    # Zorg dat shadcn variabelen aanwezig zijn (minimal set)
-    css = css_path.read_text(encoding="utf-8")
-    if "--background" not in css and "--primary" not in css:
-        shadcn_vars = """
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 10%;
-    --card: 0 0% 98%;
-    --card-foreground: 0 0% 10%;
-    --primary: 220 70% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 20% 95%;
-    --secondary-foreground: 0 0% 10%;
-    --muted: 220 20% 95%;
-    --muted-foreground: 220 10% 45%;
-    --border: 220 20% 88%;
-    --input: 220 20% 88%;
-    --ring: 220 70% 50%;
-    --radius: 0.375rem;
-  }
-}
-"""
-        css_path.write_text(css + shadcn_vars, encoding="utf-8")
-        log("[INFO] globals.css: fallback shadcn variabelen toegevoegd")
+    if has_v3 and not has_import:
+        css = re.sub(r'@tailwind\s+\w+;\s*\n?', '', css)
+        css = header + css.lstrip()
+        css_path.write_text(css, encoding="utf-8")
+        log("[OK]  globals.css: v3→v4 + DaisyUI geactiveerd")
+    elif not has_v3 and not has_import:
+        css_path.write_text(header + css, encoding="utf-8")
+        log("[OK]  globals.css: Tailwind v4 + DaisyUI toegevoegd")
+    elif "daisyui" not in css:
+        css = css.replace('@import "tailwindcss";',
+                          '@import "tailwindcss";\n@plugin "daisyui";')
+        css_path.write_text(css, encoding="utf-8")
+        log("[OK]  globals.css: DaisyUI plugin toegevoegd")
 
 
 def _create_ui_components(project_dir: Path) -> None:
@@ -766,8 +778,9 @@ def _plan_and_assemble(
     # Stap 2: assembleer TSX via component registry (gratis, geen Claude-call)
     try:
         from component_registry import assemble_page
-        plan = json.loads(plan_path.read_text(encoding="utf-8"))
-        tsx  = assemble_page(plan, label, company_name)
+        plan  = json.loads(plan_path.read_text(encoding="utf-8"))
+        theme = plan.get("theme", "light")
+        tsx   = assemble_page(plan, label, company_name)
         if is_homepage:
             dest = project_dir / "src" / "app" / "page.tsx"
         else:
@@ -1186,7 +1199,7 @@ def main():
             write_status(running=False, prospect=company_name, step="generate:layout", result="failed")
             sys.exit(1)
 
-        # Patch globals.css na layout-generatie (Tailwind v3→v4 fix)
+        # Patch globals.css na layout-generatie (Tailwind v3→v4 + DaisyUI)
         _fix_globals_css(project_dir)
 
         # Fix hallucinated Lucide icons die niet bestaan
@@ -1194,6 +1207,9 @@ def main():
 
         # Fix veelvoorkomende layout.tsx syntax-problemen
         _fix_layout_tsx(project_dir)
+
+        # Patch data-theme in layout.tsx op basis van het gekozen DaisyUI-theme
+        _patch_daisyui_theme(project_dir, collected_path)
 
         # ── Fase 2: homepage via component registry ───────────────────────────
         n += 1
