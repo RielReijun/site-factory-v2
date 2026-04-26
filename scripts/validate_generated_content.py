@@ -121,6 +121,16 @@ def check_briefing_pages(site_dir: Path, collected_path: Path) -> list[str]:
     return warnings
 
 
+# Kritieke issues die de site NIET verkoopbaar maken — harde fails
+CRITICAL_PATTERNS = [
+    (r"bedrijfsnaam", "Bedrijfsnaam ontbreekt"),
+    (r"telefoon.*ontbreekt", "Telefoonnummer ontbreekt"),
+    (r"e-mail.*ontbreekt", "E-mailadres ontbreekt"),
+    (r"placeholder", "Placeholder-tekst gevonden"),
+    (r"pagina.*ontbreekt", "Verwachte pagina ontbreekt"),
+]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--site-dir",       required=True)
@@ -134,31 +144,46 @@ def main():
 
     if not site_dir.exists():
         print(f"[FAIL] Site-map niet gevonden: {site_dir}")
-        sys.exit(0)  # Geen harde fout — pipeline gaat door
+        sys.exit(1)
 
     structured = load_structured_data(collected_path)
     html_text  = get_all_html_text(site_dir)
 
     all_warnings: list[str] = []
-
     all_warnings += check_company_name(html_text, company_name)
     all_warnings += check_contact_info(html_text, structured)
     all_warnings += check_placeholders(site_dir)
     all_warnings += check_briefing_pages(site_dir, collected_path)
 
+    # Splits in kritieke failures en gewone waarschuwingen
+    critical = [w for w in all_warnings if any(
+        re.search(p, w, re.IGNORECASE) for p, _ in CRITICAL_PATTERNS
+    )]
+    warnings = [w for w in all_warnings if w not in critical]
+
     result = {
         "company":  company_name,
-        "warnings": all_warnings,
+        "critical": critical,
+        "warnings": warnings,
+        "ready":    len(critical) == 0,
         "ok":       len(all_warnings) == 0,
     }
 
     out_path = site_dir / "content_validation.json"
     out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    if all_warnings:
-        print(f"[WARN] Content-check: {len(all_warnings)} waarschuwing(en)")
-        for w in all_warnings:
+    if critical:
+        print(f"[FAIL] Content-check: {len(critical)} kritieke issue(s) — site NIET verkoopbaar")
+        for w in critical:
+            print(f"       [KRITIEK] {w}")
+        for w in warnings:
+            print(f"       [WARN]    {w}")
+        sys.exit(1)
+    elif warnings:
+        print(f"[WARN] Content-check: {len(warnings)} waarschuwing(en) — site verkoopbaar maar controleer")
+        for w in warnings:
             print(f"       - {w}")
+        sys.exit(0)
     else:
         print(f"[OK]  Content-check geslaagd voor {company_name}")
 

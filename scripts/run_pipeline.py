@@ -1425,9 +1425,12 @@ def main():
             n += 1
             step_repair_site(validate_dir, json_out, n, total, company_name)
 
-        # ── Content-check ──────────────────────────────────────────────────────
+        # ── Content-check — kritieke issues blokkeren mark_site_done ──────────
         n += 1
-        step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
+        content_ok = step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
+        if not content_ok:
+            log("[WARN] Content-check heeft kritieke issues — site wordt gemarkeerd als needs_review")
+            update_prospect(company_name, ready_for_review=False, content_issues=True)
 
         # ── Screenshot-validatie ───────────────────────────────────────────────
         n += 1
@@ -1469,8 +1472,27 @@ def main():
     except Exception as e:
         log(f"[WARN] Timings opslaan mislukt: {e}")
 
+    # Readiness gate: lees content_validation.json voor definitieve status
+    ready = True
+    content_val = validate_dir / "content_validation.json" if validate_dir.exists() else None
+    if content_val and content_val.exists():
+        try:
+            cv = json.loads(content_val.read_text(encoding="utf-8"))
+            if cv.get("critical"):
+                ready = False
+                log(f"[WARN] Site heeft {len(cv['critical'])} kritieke content-issue(s) — status: needs_review")
+        except Exception:
+            pass
+
     mark_site_done(company_name)
-    write_status(running=False, prospect=company_name, step="done", result="ok")
+    if not ready:
+        update_prospect(company_name, review_status="needs_review")
+        log("[INFO] Prospect gemarkeerd als needs_review — controleer content_validation.json")
+    else:
+        update_prospect(company_name, review_status="ready")
+        log("[OK]  Readiness check geslaagd — site klaar voor presentatie")
+
+    write_status(running=False, prospect=company_name, step="done", result="ok" if ready else "needs_review")
 
     log(f"\n{'═' * 60}")
     log(f"[OK] Pipeline voltooid voor: {company_name}")

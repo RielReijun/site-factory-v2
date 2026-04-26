@@ -1957,6 +1957,16 @@ function render(prospects) {
       ? `<span class="chip chip-cost" title="${p.page_count} pagina's">$${p.total_cost.toFixed(2)}</span>`
       : '';
 
+    // Readiness chip
+    let readinessChip = '';
+    const r = p.readiness || {};
+    if (p.needs_review) {
+      const issues = (r.content_critical || []).slice(0, 2).map(w => esc(w)).join(' / ');
+      readinessChip = `<span class="chip" style="background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)" title="${issues}">⚠ Needs review</span>`;
+    } else if (r.review === 'ready') {
+      readinessChip = `<span class="chip" style="background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25)" title="Build ✓ Content ✓ Visual ✓">✓ Ready</span>`;
+    }
+
     // Cloudflare link
     const cfUrl = p.cloudflare_url && !p.cloudflare_url.includes('.pages.dev.pages.dev')
       ? p.cloudflare_url : p.cloudflare_url ? p.cloudflare_url : '';
@@ -1994,7 +2004,7 @@ function render(prospects) {
             <div class="prospect-name">${esc(p.name)}</div>
             <div class="prospect-url">${esc(p.url)}</div>
           </div>
-          <div class="card-chips">${statusChip}${costChip}</div>
+          <div class="card-chips">${statusChip}${readinessChip}${costChip}</div>
         </div>
         <div class="card-stages-row">
           <div class="stages">${stagesHtml}</div>

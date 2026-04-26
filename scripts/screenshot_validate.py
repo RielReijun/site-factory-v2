@@ -127,23 +127,41 @@ def main():
 
     # Pagina-strategie:
     # - index.html altijd op BEIDE viewports (375px mobiel + 1280px desktop)
-    # - daarna willekeurige subpagina's op 1280px tot max_pages bereikt is
-    # Voorbeeld bij max_pages=4: index@375, index@1280, subpage1@1280, subpage2@1280
+    # - daarna willekeurige subpagina's op 1280px (inclusief Next.js nested routes)
     import random
-    html_files = [f for f in sorted(site_dir.glob("*.html")) if not f.name.startswith("_")]
-    index      = site_dir / "index.html"
-    rest       = [f for f in html_files if f != index and f.name not in ("legal.html",)]
+
+    # Next.js exporteert subpagina's als over-ons/index.html — gebruik rglob
+    all_html = [
+        f for f in sorted(site_dir.rglob("*.html"))
+        if not f.name.startswith("_") and "_next" not in str(f)
+    ]
+    index = site_dir / "index.html"
+    skip  = {"legal.html", "404.html", "sitemap.html"}
+    rest  = [f for f in all_html if f != index and f.name not in skip]
     random.shuffle(rest)
 
-    # Bouw een lijst van (html_path, viewport_width, label) tuples
+    def _url_for(html_path: "Path") -> str:
+        """Bouw correcte URL voor zowel root als nested Next.js routes."""
+        rel = html_path.relative_to(site_dir)
+        parts = rel.parts
+        if len(parts) == 1:
+            # Root: index.html → /, contact.html → /contact.html
+            return f"http://127.0.0.1:{args.port}/{parts[0]}"
+        else:
+            # Nested: over-ons/index.html → /over-ons/
+            return f"http://127.0.0.1:{args.port}/{parts[0]}/"
+
+    # Bouw een lijst van (html_path, viewport_width, label, url) tuples
     shots: list[tuple] = []
     if index.exists():
-        shots.append((index, 375,  "index@mobile"))
-        shots.append((index, 1280, "index@desktop"))
+        shots.append((index, 375,  "index@mobile",  f"http://127.0.0.1:{args.port}/"))
+        shots.append((index, 1280, "index@desktop", f"http://127.0.0.1:{args.port}/"))
     for subpage in rest:
         if len(shots) >= args.max_pages:
             break
-        shots.append((subpage, 1280, f"{subpage.name}@desktop"))
+        rel = subpage.relative_to(site_dir)
+        label = str(rel.parent) if subpage.name == "index.html" else rel.stem
+        shots.append((subpage, 1280, f"{label}@desktop", _url_for(subpage)))
 
     if not shots:
         print("[WARN] Geen HTML-pagina's gevonden")
@@ -171,9 +189,8 @@ def main():
             )
             page = browser.new_page()
 
-            for html_path, viewport_w, label in shots:
-                url       = f"http://127.0.0.1:{args.port}/{html_path.name}"
-                shot_path = tmp_dir / f"{html_path.stem}_{viewport_w}.png"
+            for html_path, viewport_w, label, url in shots:
+                shot_path = tmp_dir / f"{label.replace('/', '-')}_{viewport_w}.png"
 
                 print(f"[INFO] Screenshot: {label}")
                 ok = take_screenshot(page, url, shot_path, viewport_width=viewport_w)

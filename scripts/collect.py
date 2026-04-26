@@ -579,6 +579,41 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
     if sd_summary:
         print(f"[OK] Structured data: {' | '.join(sd_summary)}")
 
+    # Business facts JSON — harde feiten voor generator/validator
+    # Wordt gebruikt door validate_generated_content.py en generate prompts
+    contact = structured.get("contact", {})
+    facts: dict = {
+        "name":          "",  # wordt ingevuld via brief of prospect.name
+        "phone":         contact.get("phone", ""),
+        "email":         contact.get("email", ""),
+        "address":       contact.get("address", ""),
+        "opening_hours": [],  # wordt ingevuld vanuit JSON-LD indien beschikbaar
+        "services":      [],  # uit nav-structuur of JSON-LD
+        "prices":        [],  # uit crawled tekst, indien aanwezig
+        "booking_url":   "",
+        "socials":       structured.get("social_links", {}),
+        "claims_allowed":   [],  # feiten die bewezen zijn
+        "claims_forbidden": [],  # niet te parafraseren / verzinnen
+    }
+    # Haal openingstijden uit JSON-LD indien beschikbaar
+    for block in structured.get("json_ld", []):
+        if block.get("openingHoursSpecification"):
+            facts["opening_hours"] = block["openingHoursSpecification"]
+            break
+        if block.get("openingHours"):
+            facts["opening_hours"] = block["openingHours"]
+            break
+    # Services uit nav
+    nav = structured.get("nav", [])
+    if nav:
+        facts["services"] = nav[:10]
+
+    save_file(
+        target_dir / "facts.json",
+        json.dumps(facts, indent=2, ensure_ascii=False),
+    )
+    print(f"[OK] Facts JSON opgeslagen (telefoon: {bool(facts['phone'])}, email: {bool(facts['email'])}, adres: {bool(facts['address'])})")
+
     print(f"[OK] Pagina's gecrawld: {len(pages_saved)}")
     print(f"[OK] Assets gedownload: {len(assets_saved)}")
     if failed_urls:
