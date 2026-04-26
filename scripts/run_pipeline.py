@@ -312,15 +312,21 @@ def step_scaffold_nextjs(project_dir: Path, slug: str, n: int, total: int, prosp
             log(f"[WARN] {label} mislukt (exit {proc.returncode}) — pipeline gaat door")
         return proc.returncode == 0
 
-    # Alle npm packages in één keer installeren (sneller, geen timing-issues)
+    # Alle npm packages in één keer installeren
     _run_in_project(
         ["npm", "install",
          "lucide-react",
          "daisyui",
          "tailwindcss-animate",
          "@tailwindcss/typography",
-         "@tailwindcss/forms"],
-        "npm packages installeren (lucide + daisyui + tailwind plugins)",
+         "@tailwindcss/forms",
+         "next-sitemap",
+         "embla-carousel-react",
+         "embla-carousel-autoplay",
+         "leaflet",
+         "react-leaflet",
+         "@types/leaflet"],
+        "npm packages installeren",
     )
 
     # shadcn-stijl componenten direct aanmaken (geen init nodig)
@@ -639,7 +645,77 @@ def _create_ui_components(project_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    log(f"[OK]  UI componenten aangemaakt: button, card, badge, accordion, separator, sheet")
+    # ── Embla Carousel component ──────────────────────────────────────────────
+    (src_dir / "components" / "GalleryCarousel.tsx").write_text(
+        '"use client";\n'
+        'import useEmblaCarousel from "embla-carousel-react";\n'
+        'import Autoplay from "embla-carousel-autoplay";\n\n'
+        'interface Props { images: { src: string; alt?: string }[] }\n\n'
+        'export default function GalleryCarousel({ images }: Props) {\n'
+        '  const [emblaRef] = useEmblaCarousel({ loop: true }, [Autoplay({ delay: 3500 })]);\n'
+        '  return (\n'
+        '    <div className="overflow-hidden rounded-xl" ref={emblaRef}>\n'
+        '      <div className="flex">\n'
+        '        {images.map((img, i) => (\n'
+        '          <div key={i} className="flex-none w-full md:w-1/2 lg:w-1/3 pl-3 first:pl-0">\n'
+        '            <img src={img.src} alt={img.alt ?? ""} className="w-full aspect-square object-cover rounded-lg" />\n'
+        '          </div>\n'
+        '        ))}\n'
+        '      </div>\n'
+        '    </div>\n'
+        '  );\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    # ── Leaflet Map component (dynamic import — geen SSR) ─────────────────────
+    (src_dir / "components" / "LeafletMap.tsx").write_text(
+        '"use client";\n'
+        'import { useEffect, useRef } from "react";\n\n'
+        'interface Props { address: string; lat?: number; lng?: number; zoom?: number }\n\n'
+        'export default function LeafletMap({ address, lat = 52.3676, lng = 4.9041, zoom = 15 }: Props) {\n'
+        '  const mapRef = useRef<HTMLDivElement>(null);\n'
+        '  useEffect(() => {\n'
+        '    if (!mapRef.current) return;\n'
+        '    import("leaflet").then((L) => {\n'
+        '      import("leaflet/dist/leaflet.css");\n'
+        '      if ((mapRef.current as any)._leaflet_id) return;\n'
+        '      const map = L.map(mapRef.current!, { scrollWheelZoom: false });\n'
+        '      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {\n'
+        '        attribution: "© OpenStreetMap"\n'
+        '      }).addTo(map);\n'
+        '      map.setView([lat, lng], zoom);\n'
+        '      L.marker([lat, lng]).addTo(map).bindPopup(address);\n'
+        '    });\n'
+        '  }, [lat, lng, zoom, address]);\n'
+        '  return <div ref={mapRef} className="w-full h-64 rounded-xl z-10" />;\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    log("[OK]  UI + carousel + map componenten aangemaakt")
+
+    # ── next-sitemap config ───────────────────────────────────────────────────
+    (project_dir / "next-sitemap.config.js").write_text(
+        '/** @type {import("next-sitemap").IConfig} */\n'
+        'module.exports = {\n'
+        '  siteUrl: process.env.SITE_URL || "https://example.com",\n'
+        '  generateRobotsTxt: true,\n'
+        '  outDir: "out",\n'
+        '  trailingSlash: true,\n'
+        '};\n',
+        encoding="utf-8",
+    )
+
+    # Voeg postbuild script toe aan package.json
+    pkg_path = project_dir / "package.json"
+    if pkg_path.exists():
+        try:
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            pkg.setdefault("scripts", {})["postbuild"] = "next-sitemap"
+            pkg_path.write_text(json.dumps(pkg, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
 
 def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
@@ -1281,6 +1357,17 @@ def main():
             write_status(running=False, prospect=company_name, step="build_nextjs", result="failed")
             sys.exit(1)
         log(f"[OK]  Statische export: {out_dir} ({len(list(out_dir.rglob('*.html')))} HTML-bestanden)")
+
+        # next-sitemap: genereer sitemap.xml en robots.txt
+        site_url_file = collected_path / "site_url.txt"
+        site_url = site_url_file.read_text(encoding="utf-8").strip() if site_url_file.exists() else ""
+        if site_url:
+            env = {**os.environ, "SITE_URL": site_url}
+            sm = subprocess.run(["npx", "next-sitemap"], cwd=str(project_dir),
+                                capture_output=True, text=True, env=env)
+            if sm.returncode == 0:
+                sitemap = out_dir / "sitemap.xml"
+                log(f"[OK]  sitemap.xml gegenereerd voor {site_url}" if sitemap.exists() else "[WARN] next-sitemap liep maar sitemap.xml niet gevonden")
 
     # ── validate_site → repair → re-validate ─────────────────────────────────
     # validate/repair/polish draaien op de /out directory (statische HTML-export)

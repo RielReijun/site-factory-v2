@@ -28,6 +28,12 @@ SHADCN_IMPORTS = {
 
 ALWAYS_IMPORTS = ['import Link from "next/link";']
 
+# Componenten die automatisch geïmporteerd worden als ze in de TSX voorkomen
+COMPONENT_IMPORTS = {
+    "GalleryCarousel": 'import GalleryCarousel from "@/components/GalleryCarousel";',
+    "LeafletMap":      'import LeafletMap from "@/components/LeafletMap";',
+}
+
 
 def _prepare_content(raw: dict, section_type: str) -> dict:
     """
@@ -220,6 +226,11 @@ def assemble_page(plan: dict, page_slug: str, company_name: str) -> str:
     for key in sorted(all_shadcn):
         if key in SHADCN_IMPORTS:
             imports.append(SHADCN_IMPORTS[key])
+    # Gedeelde componenten (Carousel, Map)
+    full_tsx = "\n".join(body_parts)
+    for comp, imp in COMPONENT_IMPORTS.items():
+        if comp in full_tsx:
+            imports.append(imp)
 
     body = "\n".join(body_parts) if body_parts else "      <div />"
 

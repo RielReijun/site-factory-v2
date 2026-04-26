@@ -181,6 +181,15 @@ def main():
     client = Anthropic(api_key=api_key)
     model  = get_model()
 
+    # Sitemap URL opslaan (wordt gebruikt door next-sitemap na de build)
+    if args.homepage:
+        # Lees URL uit briefing voor sitemap
+        url_match = re.search(r'https?://[^\s\'"]+', briefing[:500])
+        if url_match:
+            sitemap_url = url_match.group(0).rstrip('/')
+            url_file = Path(args.brief).parent / "site_url.txt"
+            url_file.write_text(sitemap_url, encoding="utf-8")
+
     # Theme bepalen (alleen voor homepage, wordt gedeeld met alle pagina's)
     theme = ""
     if args.homepage:
