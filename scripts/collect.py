@@ -596,7 +596,10 @@ def crawl_site(start_url: str, target_dir: Path) -> dict:
         "claims_forbidden": [],  # niet te parafraseren / verzinnen
     }
     # Haal openingstijden uit JSON-LD indien beschikbaar
+    # JSON-LD blokken kunnen dicts of lijsten zijn — alleen dicts verwerken
     for block in structured.get("json_ld", []):
+        if not isinstance(block, dict):
+            continue
         if block.get("openingHoursSpecification"):
             facts["opening_hours"] = block["openingHoursSpecification"]
             break
