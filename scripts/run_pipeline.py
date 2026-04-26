@@ -465,16 +465,16 @@ def _fix_layout_tsx(project_dir: Path) -> None:
         except Exception:
             pass
 
-    # Fix ongeldige Google Font weights (Lato heeft geen 500, 600)
+    # Fix ongeldige Google Font weights — vervang alle 500/600/800 door 400
     layout = project_dir / "src" / "app" / "layout.tsx"
     if layout.exists():
         try:
             c = layout.read_text(encoding="utf-8")
-            # Lato: alleen 100, 300, 400, 700, 900
-            fixed = re.sub(r'"(500|600)"(\s*,?\s*(?:\/\/[^\n]*)?\s*(?=\]))', lambda m: '"400"' + m.group(2), c)
+            fixed = re.sub(r'"(500|600|800)"', '"400"', c)
+            fixed = re.sub(r',\s*["\'](?:500|600|800)["\']', '', fixed)
             if fixed != c:
                 layout.write_text(fixed, encoding="utf-8")
-                log("[OK]  layout.tsx: ongeldige font weight gecorrigeerd (500→400)")
+                log("[OK]  layout.tsx: ongeldige font weights verwijderd (500/600/800→400)")
         except Exception:
             pass
 
