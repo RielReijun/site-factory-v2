@@ -399,6 +399,39 @@ def _patch_daisyui_theme(project_dir: Path, collected_path: Path | None) -> None
         log(f"[WARN] _patch_daisyui_theme: {e}")
 
 
+def _fix_daisyui_colors(project_dir: Path) -> None:
+    """
+    Vervang niet-bestaande CSS-variabelen door DaisyUI semantische klassen.
+    Claude gebruikt bg-[--color-bg] / bg-[--color-primary] die niet altijd
+    werken in DaisyUI-themes.
+    """
+    import re as _re
+    for tsx in (project_dir / "src").rglob("*.tsx"):
+        try:
+            c = tsx.read_text(encoding="utf-8")
+            orig = c
+            # Header/nav: transparante achtergrond → glassmorphism
+            c = c.replace("bg-[--color-bg]", "bg-base-100/95 backdrop-blur-sm")
+            c = c.replace("bg-[--color-background]", "bg-base-100/95 backdrop-blur-sm")
+            # Footer: primaire kleur met witte tekst → neutral (altijd donker genoeg)
+            c = _re.sub(
+                r'bg-\[--color-primary\](\s+)text-white',
+                r'bg-neutral\1text-neutral-content', c
+            )
+            c = _re.sub(
+                r'bg-primary(\s+)text-white(?!\s*/)',
+                r'bg-neutral\1text-neutral-content', c
+            )
+            # Witte tekst in footer context
+            if "neutral-content" in c or tsx.name == "Footer.tsx":
+                c = c.replace("text-white/80", "text-neutral-content/80")
+                c = c.replace("text-white/60", "text-neutral-content/60")
+            if orig != c:
+                tsx.write_text(c, encoding="utf-8")
+        except Exception:
+            pass
+
+
 def _fix_page_function_names(project_dir: Path) -> None:
     """Fix functienamen die beginnen met een cijfer (bijv. 360TourPage → TourPage360)."""
     import re as _re
@@ -1374,6 +1407,7 @@ def main():
         # Nog een keer Lucide icons fixen — pages worden na layout gegenereerd
         _fix_lucide_icons(project_dir)
         _fix_page_function_names(project_dir)
+        _fix_daisyui_colors(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
