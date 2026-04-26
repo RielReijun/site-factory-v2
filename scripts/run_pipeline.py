@@ -1498,7 +1498,11 @@ def main():
                 q["checks"]["validate"] = "pass" if passed else "fail"
                 if not passed:
                     fails = [i["message"] for i in vdata.get("issues", []) if i.get("level") == "FAIL"]
-                    q["blockers"].extend(fails[:3] or ["validate_generated_site niet geslaagd"])
+                    # Prefix zodat classify_blocker() altijd "validate_failed" herkent
+                    q["blockers"].extend(
+                        [f"validate_failed: {m}" for m in fails[:3]]
+                        or ["validate_failed: validate_generated_site niet geslaagd"]
+                    )
             except Exception:
                 q["checks"]["validate"] = "unknown"
         else:

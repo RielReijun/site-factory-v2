@@ -340,9 +340,12 @@ def run_repair_cycle(
                 log_fn(f"  → validate_failed repair exception: {e}")
 
         elif btype == "build_failed":
-            action["action_kind"] = "pipeline_autofix"
-            action["ok"] = False
-            log_fn(f"  → build_failed: pipeline auto-fix handelt dit af bij rebuild")
+            # Auto-fixes (Lucide, font weights, style props) draaien al vóór rebuild —
+            # zet needs_rebuild zodat de loop daarna opnieuw bouwt en valideert.
+            action["action_kind"] = "tsx_regen"
+            action["ok"] = True
+            result["needs_rebuild"] = True
+            log_fn(f"  → build_failed: needs_rebuild gezet, pipeline auto-fixes bij rebuild")
 
         else:
             log_fn(f"  → unknown blocker: geen actie")
