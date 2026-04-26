@@ -28,6 +28,8 @@ services:
       - ./output:/workspace/output
       - ./prompts:/workspace/prompts
       - ./scripts:/workspace/scripts
+      - npm-cache:/root/.npm        # persistente npm cache — scaffold ~5s sneller
+      - nextjs-cache:/root/.cache/nextjs  # Next.js turbopack cache
     deploy:
       resources:
         limits:
@@ -76,6 +78,10 @@ services:
       resources:
         limits:
           memory: 512m
+
+volumes:
+  npm-cache:
+  nextjs-cache:
 
   scheduler:
     <<: *base

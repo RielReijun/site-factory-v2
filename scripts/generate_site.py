@@ -75,25 +75,37 @@ Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
 Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
 Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
 {impeccable_section}{image_section}
-## DaisyUI — gebruik semantische component-klassen voor rijkere layouts
-DaisyUI klassen zijn beschikbaar. Gebruik ze vrijuit naast Tailwind:
-- `btn btn-primary`, `btn-outline`, `btn-ghost` — knoppen
-- `card card-body card-title` — kaarten
-- `badge badge-primary` — labels
-- `hero hero-content` — hero-secties
-- `navbar`, `menu`, `drawer` — navigatie
-- `accordion`, `collapse` — uitklapbare content
-- `stat stat-title stat-value stat-desc` — statistieken
-- `timeline`, `steps`, `progress` — voortgang
-- `table table-zebra` — tabellen en prijslijsten
-- `divider` — scheidingslijn
-- `rating` — sterren
+## Maak elke site UNIEK — geen generieke templates
+Studeer de briefing grondig. Kies bewust voor dit specifieke merk:
+- **Eigen layout-ritme**: varieer sectie-groottes, witruimte, asymmetrie
+- **Merkspecifieke typografie**: kies heading-stijl die past bij de sfeer (elegant serif, bold sans, etc.)
+- **Kleur creatief inzetten**: gebruik de primary/secondary brand-kleuren voor gradients, borders, accents
+- Elke pagina moet aanvoelen als gebouwd voor exact dit bedrijf
+
+## DaisyUI — kies components die de merksfeer versterken
+Gebruik DaisyUI-klassen die passen bij het specifieke merk:
+- `btn btn-primary` / `btn-outline` / `btn-ghost` — kies variant op basis van merk-energie
+- `card card-body shadow-lg` — diepte en structuur
+- `hero hero-content` — indrukwekkende hero-secties
+- `stat stat-title stat-value stat-desc` — USPs en highlights visueel sterk
+- **`table table-zebra`** — gebruik ALTIJD voor prijslijsten en openingstijden (nooit custom divs)
+- `badge` — diensten en labels
+- `divider` — elegante sectie-scheiding
+- `rating` — klant-sterren
+
+## Openingstijden — verplicht weergeven als ze in de briefing staan
+Openingstijden zijn kritisch voor lokale bedrijven. Als de briefing ze noemt:
+- Toon ze op de homepage (compact, goed zichtbaar)
+- Toon ze uitgebreid op de contact-pagina als `table table-zebra`
+- Schrijf "Maandag: gesloten" expliciet, niet "op aanvraag"
 
 ## Beschikbare libraries — gebruik deze altijd boven custom implementaties
 - **shadcn/ui**: `import {{ Accordion, AccordionItem, AccordionTrigger, AccordionContent }} from "@/components/ui/accordion"` — gebruik ALTIJD voor FAQ secties
 - **shadcn/ui**: `import {{ Card, CardHeader, CardTitle, CardContent }} from "@/components/ui/card"` — voor kaarten
 - **shadcn/ui**: `import {{ Button }} from "@/components/ui/button"` — voor alle knoppen/CTAs
 - **shadcn/ui**: `import {{ Sheet, SheetContent, SheetTrigger }} from "@/components/ui/sheet"` — voor mobiel nav
+- **BookingWidget**: `import BookingWidget from "@/components/BookingWidget"` — online afspraken (gebruik als de briefing een booking-url of Calendly/Treatwell-link noemt: `<BookingWidget url="..." title="Maak een afspraak" />`)
+- **LeafletMap**: `import LeafletMap from "@/components/LeafletMap"` — kaart op contact-pagina (gebruik het adres uit de briefing: `<LeafletMap address="Straatnaam 1, Stad" />`)
 - **shadcn/ui**: `import {{ Badge }} from "@/components/ui/badge"` — voor labels/tags
 - **Lucide React**: `import {{ Phone, Mail, MapPin, Clock, ChevronDown, Menu, X, Star, Check }} from "lucide-react"` — voor iconen
 - **Tailwind Typography**: `className="prose prose-lg max-w-none"` voor lange teksten (over-ons etc.)

@@ -32,6 +32,7 @@ ALWAYS_IMPORTS = ['import Link from "next/link";']
 COMPONENT_IMPORTS = {
     "GalleryCarousel": 'import GalleryCarousel from "@/components/GalleryCarousel";',
     "LeafletMap":      'import LeafletMap from "@/components/LeafletMap";',
+    "BookingWidget":   'import BookingWidget from "@/components/BookingWidget";',
 }
 
 

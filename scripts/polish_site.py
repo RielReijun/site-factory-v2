@@ -356,13 +356,75 @@ def inject_demo_banner(site_dir: Path, company_name: str) -> list[str]:
     return fixes
 
 
+# ── Schema.org LocalBusiness ─────────────────────────────────────────────────
+
+def inject_schema_org(site_dir: Path, collected_path: Path | None) -> list[str]:
+    """
+    Injecteer Schema.org LocalBusiness JSON-LD in index.html.
+    Data komt uit structured_data.json en de prospect-URL.
+    """
+    if not collected_path:
+        return []
+    sd_path = Path(collected_path) / "structured_data.json"
+    if not sd_path.exists():
+        return []
+
+    try:
+        import json as _json
+        sd = _json.loads(sd_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    contact = sd.get("contact", {})
+    name_hint = sd.get("meta_tags", {}).get("og_title", "")
+
+    # Bouw minimale LocalBusiness markup
+    schema: dict = {"@context": "https://schema.org", "@type": "LocalBusiness"}
+    if name_hint:
+        schema["name"] = name_hint
+    if contact.get("phone"):
+        schema["telephone"] = contact["phone"]
+    if contact.get("email"):
+        schema["email"] = contact["email"]
+    if contact.get("address"):
+        schema["address"] = {"@type": "PostalAddress", "streetAddress": contact["address"]}
+
+    # Voeg openingstijden toe als die in JSON-LD blokken staan
+    for block in sd.get("json_ld", []):
+        if block.get("openingHoursSpecification") or block.get("openingHours"):
+            schema.update({k: v for k, v in block.items()
+                           if k in ("openingHoursSpecification", "openingHours")})
+            break
+
+    if len(schema) < 3:
+        return []  # Te weinig data, niet injecteren
+
+    import json as _json2
+    ld_block = f'<script type="application/ld+json">{_json2.dumps(schema, ensure_ascii=False)}</script>'
+
+    index = site_dir / "index.html"
+    if not index.exists():
+        return []
+
+    content = index.read_text(encoding="utf-8", errors="ignore")
+    if "LocalBusiness" in content:
+        return []
+
+    new = re.sub(r"(</head>)", ld_block + r"\n\1", content, flags=re.IGNORECASE, count=1)
+    if new != content:
+        index.write_text(new, encoding="utf-8")
+        return ["Schema.org LocalBusiness JSON-LD toegevoegd aan index.html"]
+    return []
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Kwaliteitsslag over een gegenereerde site")
-    parser.add_argument("--site-dir",    required=True, help="Pad naar de gegenereerde site-map")
-    parser.add_argument("--company",     default="",    help="Bedrijfsnaam voor demo-banner")
-    parser.add_argument("--threshold",   type=float, default=0.45,
+    parser.add_argument("--site-dir",        required=True)
+    parser.add_argument("--company",         default="")
+    parser.add_argument("--collected-path",  default="", help="Pad naar collected data voor schema.org")
+    parser.add_argument("--threshold",       type=float, default=0.45,
                         help="Jaccard-drempel voor header-consistentie (default: 0.45)")
     args = parser.parse_args()
 
@@ -423,6 +485,13 @@ def main():
         total_fixes += len(banner_fixes)
     else:
         print(f"[INFO] --company niet opgegeven, demo-banner overgeslagen")
+
+    # Schema.org LocalBusiness
+    collected_path = Path(args.collected_path) if args.collected_path else None
+    schema_fixes = inject_schema_org(site_dir, collected_path)
+    for fix in schema_fixes:
+        print(f"[OK]  {fix}")
+    total_fixes += len(schema_fixes)
 
     print(f"\n[OK]  Polish klaar: {total_fixes} fix(es) toegepast")
 

@@ -769,7 +769,27 @@ def _create_ui_components(project_dir: Path) -> None:
         encoding="utf-8",
     )
 
-    log("[OK]  UI + carousel + map componenten aangemaakt")
+    # ── Booking widget (Calendly/Treatwell iframe) ────────────────────────────
+    (src_dir / "components" / "BookingWidget.tsx").write_text(
+        '"use client";\n'
+        'interface Props { url: string; title?: string }\n\n'
+        'export default function BookingWidget({ url, title = "Maak een afspraak" }: Props) {\n'
+        '  return (\n'
+        '    <section className="py-16 bg-base-200">\n'
+        '      <div className="container mx-auto px-4 text-center">\n'
+        '        <h2 className="font-heading text-3xl font-bold mb-6">{title}</h2>\n'
+        '        <div className="max-w-3xl mx-auto rounded-xl overflow-hidden shadow-xl">\n'
+        '          <iframe src={url} width="100%" height="700" frameBorder="0"\n'
+        '            className="w-full" title={title} />\n'
+        '        </div>\n'
+        '      </div>\n'
+        '    </section>\n'
+        '  );\n'
+        '}\n',
+        encoding="utf-8",
+    )
+
+    log("[OK]  UI + carousel + map + booking componenten aangemaakt")
 
     # ── next-sitemap config ───────────────────────────────────────────────────
     (project_dir / "next-sitemap.config.js").write_text(
@@ -854,36 +874,6 @@ def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> b
     return ok
 
 
-def step_generate_unit(briefing_path: Path, company_name: str, unit_key: str,
-                        out_path: Path, ref_tsx: Path | None,
-                        n: int, total: int,
-                        page_slug: str = "", page_title: str = "", page_desc: str = "",
-                        image_manifest: Path | None = None,
-                        nav_pages: list[str] | None = None) -> bool:
-    cmd = [
-        "python", str(SCRIPTS_DIR / "generate_site.py"),
-        "--brief",   str(briefing_path),
-        "--company", company_name,
-        "--unit",    unit_key,
-        "--out",     str(out_path),
-    ]
-    if ref_tsx and ref_tsx.exists():
-        cmd += ["--ref-tsx", str(ref_tsx)]
-    if page_slug:
-        cmd += ["--page-slug",  page_slug]
-    if page_title:
-        cmd += ["--page-title", page_title]
-    if page_desc:
-        cmd += ["--page-desc",  page_desc]
-    if image_manifest and image_manifest.exists():
-        cmd += ["--image-manifest", str(image_manifest)]
-    if nav_pages:
-        cmd += ["--nav-pages", json.dumps(nav_pages)]
-
-    label = f"generate:{page_slug or unit_key}"
-    return run_cmd(cmd, label, n, total, company_name)
-
-
 def step_parse_unit(input_path: Path, out_dir: Path, n: int, total: int, prospect: str) -> bool:
     cmd = [
         "python", str(SCRIPTS_DIR / "parse_generated_site.py"),
@@ -892,59 +882,6 @@ def step_parse_unit(input_path: Path, out_dir: Path, n: int, total: int, prospec
         "--force",
     ]
     return run_cmd(cmd, f"parse:{input_path.stem}", n, total, prospect)
-
-
-def _plan_and_assemble(
-    briefing_path: Path, company_name: str,
-    page_slug: str, page_title: str, page_desc: str,
-    image_manifest: Path | None, nav_pages: list[str] | None,
-    project_dir: Path, is_homepage: bool = False,
-) -> tuple[bool, str, list[str]]:
-    """Plan een pagina met Claude (JSON), assembleer met component registry (geen code-generatie)."""
-    label = "home" if is_homepage else page_slug
-    lines = [f"\n{'─' * 60}", f"[UNIT] {label} (component registry)", f"{'─' * 60}"]
-
-    # Stap 1: genereer JSON-plan via Claude
-    plan_path = briefing_path.parent / f"{label}-plan.json"
-    plan_cmd  = [
-        "python", str(SCRIPTS_DIR / "plan_sections.py"),
-        "--brief",      str(briefing_path),
-        "--page-slug",  label,
-        "--page-title", page_title or label,
-        "--page-desc",  page_desc or "",
-        "--out",        str(plan_path),
-    ]
-    if image_manifest and image_manifest.exists():
-        plan_cmd += ["--image-manifest", str(image_manifest)]
-    if nav_pages:
-        plan_cmd += ["--nav-pages", json.dumps(nav_pages)]
-    if is_homepage:
-        plan_cmd.append("--homepage")
-
-    proc = subprocess.run(plan_cmd, cwd=str(SCRIPTS_DIR), capture_output=True, text=True)
-    lines.extend(proc.stdout.splitlines())
-    if proc.returncode != 0:
-        lines.append(f"[FAIL] plan_sections mislukt: {proc.stderr.strip()[:300]}")
-        return False, label, lines
-
-    # Stap 2: assembleer TSX via component registry (gratis, geen Claude-call)
-    try:
-        from component_registry import assemble_page
-        plan  = json.loads(plan_path.read_text(encoding="utf-8"))
-        theme = plan.get("theme", "light")
-        tsx   = assemble_page(plan, label, company_name)
-        if is_homepage:
-            dest = project_dir / "src" / "app" / "page.tsx"
-        else:
-            dest = project_dir / "src" / "app" / label / "page.tsx"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(tsx, encoding="utf-8")
-        lines.append(f"[OK]  {label}: {len(plan.get('sections', []))} secties geassembleerd → {dest.relative_to(project_dir)}")
-    except Exception as e:
-        lines.append(f"[FAIL] assembleren mislukt: {e}")
-        return False, label, lines
-
-    return True, label, lines
 
 
 def _run_unit_buffered(
@@ -1059,12 +996,15 @@ def step_cohesion_pass(site_dir: Path, n: int, total: int, prospect: str) -> boo
     return run_cmd(cmd, "cohesion_pass", n, total, prospect)
 
 
-def step_polish_site(site_dir: Path, company_name: str, n: int, total: int, prospect: str) -> bool:
+def step_polish_site(site_dir: Path, company_name: str, n: int, total: int,
+                     prospect: str, collected_path: Path | None = None) -> bool:
     cmd = [
         "python", str(SCRIPTS_DIR / "polish_site.py"),
         "--site-dir", str(site_dir),
         "--company",  company_name,
     ]
+    if collected_path:
+        cmd += ["--collected-path", str(collected_path)]
     return run_cmd(cmd, "polish_site", n, total, prospect)
 
 
@@ -1443,8 +1383,11 @@ def main():
         log(f"[OK]  Statische export: {out_dir} ({len(list(out_dir.rglob('*.html')))} HTML-bestanden)")
 
         # next-sitemap: genereer sitemap.xml en robots.txt
+        # Gebruik de prospect-URL als siteUrl (beter dan example.com)
+        site_url = prospect.get("url", "").rstrip("/")
         site_url_file = collected_path / "site_url.txt"
-        site_url = site_url_file.read_text(encoding="utf-8").strip() if site_url_file.exists() else ""
+        if site_url_file.exists():
+            site_url = site_url_file.read_text(encoding="utf-8").strip() or site_url
         if site_url:
             env = {**os.environ, "SITE_URL": site_url}
             sm = subprocess.run(["npx", "next-sitemap"], cwd=str(project_dir),
@@ -1502,15 +1445,20 @@ def main():
         # ── Polish ─────────────────────────────────────────────────────────────
         n += 1
         log("\n[INFO] Polish uitvoeren...")
-        step_polish_site(validate_dir, company_name, n, total, company_name)
+        step_polish_site(validate_dir, company_name, n, total, company_name, collected_path)
 
         # ── Outreach-mail genereren ───────────────────────────────────────────
         n += 1
         log("\n[INFO] Outreach-mail genereren...")
         step_generate_mail(company_name, n, total, company_name)
 
+    # Final-fase: timings + status pas NADAT alles klaar is
+    try:
+        save_timings(collected_path, company_name)
+    except Exception as e:
+        log(f"[WARN] Timings opslaan mislukt: {e}")
+
     mark_site_done(company_name)
-    save_timings(collected_path, company_name)
     write_status(running=False, prospect=company_name, step="done", result="ok")
 
     log(f"\n{'═' * 60}")
