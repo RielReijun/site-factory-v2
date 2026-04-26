@@ -151,11 +151,16 @@ def enrich_prospect(p: dict) -> dict:
     slug     = slugify(p.get("name", ""))
     site_dir = _find_site_dir(slug)
 
+    # Generate: lokale bestanden aanwezig OF site was eerder klaar (deployed/done)
+    has_local_site = site_dir.is_dir() and (site_dir / "index.html").exists()
+    was_generated  = p.get("site_status") in ("done", "auto_failed", "needs_review") \
+                     or bool(p.get("github_url")) or bool(p.get("cloudflare_url"))
+
     stages = {
         "collect":  p.get("status") == "collected",
         "research": p.get("research_status") == "done",
         "brief":    p.get("briefing_status") == "done",
-        "generate": site_dir.is_dir() and (site_dir / "index.html").exists(),
+        "generate": has_local_site or was_generated,
         "validate": p.get("site_status") == "done",
     }
 
@@ -185,10 +190,19 @@ def enrich_prospect(p: dict) -> dict:
         readiness["routes"] = page_count
         readiness["review"] = p.get("review_status", "pending")
 
+    # site_url: lokaal als bestanden aanwezig, anders Cloudflare
+    if has_local_site:
+        site_url = f"/sites/{slug}/"
+    elif p.get("cloudflare_url"):
+        cf = p["cloudflare_url"]
+        site_url = cf if not cf.endswith(".pages.dev.pages.dev") else cf.replace(".pages.dev.pages.dev", ".pages.dev")
+    else:
+        site_url = None
+
     return {
         **p,
         "slug":           slug,
-        "site_url":       f"/sites/{slug}/" if stages["generate"] else None,
+        "site_url":       site_url,
         "stages":         stages,
         "all_done":       all(stages.values()),
         "failed":         p.get("status") == "failed",
