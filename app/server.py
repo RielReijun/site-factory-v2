@@ -977,9 +977,9 @@ def api_deploy(slug):
         if slugify(p.get("name", "")) != slug:
             continue
 
-        site_dir = OUTPUT_DIR / f"{slug}-site"
+        site_dir = _find_site_dir(slug)
         if not (site_dir / "index.html").exists():
-            return jsonify({"ok": False, "error": "Site nog niet gegenereerd"}), 400
+            return jsonify({"ok": False, "error": "Site nog niet gegenereerd — genereer eerst de site"}), 400
 
         if p.get("deploy_status") == "running":
             return jsonify({"ok": False, "error": "Deploy is al bezig"}), 409
