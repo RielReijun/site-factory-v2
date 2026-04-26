@@ -1480,93 +1480,153 @@ def main():
     except Exception as e:
         log(f"[WARN] Timings opslaan mislukt: {e}")
 
-    # ── Centrale quality_report.json + readiness gate ─────────────────────────
-    quality: dict = {"prospect": company_name, "checks": {}, "ready": True, "blockers": []}
+    # ── Repair-and-retry loop — max 2 rondes ──────────────────────────────────
+    MAX_REPAIR_ROUNDS = 2
 
-    # 1. Build
-    quality["checks"]["build"] = "pass" if (out_dir / "index.html").exists() else "fail"
-    if quality["checks"]["build"] == "fail":
-        quality["blockers"].append("Build mislukt — geen index.html")
+    def _build_quality(vdir: Path, jout: Path) -> dict:
+        """Bouw quality_report op basis van alle validatie-outputs."""
+        q: dict = {"prospect": company_name, "checks": {}, "ready": True, "blockers": []}
 
-    # 2. Validate site — niet-PASS is een blocker
-    if json_out.exists():
+        q["checks"]["build"] = "pass" if (vdir / "index.html").exists() else "fail"
+        if q["checks"]["build"] == "fail":
+            q["blockers"].append("Build mislukt — geen index.html")
+
+        if jout.exists():
+            try:
+                vdata = json.loads(jout.read_text(encoding="utf-8"))
+                passed = vdata.get("status") == "PASS"
+                q["checks"]["validate"] = "pass" if passed else "fail"
+                if not passed:
+                    fails = [i["message"] for i in vdata.get("issues", []) if i.get("level") == "FAIL"]
+                    q["blockers"].extend(fails[:3] or ["validate_generated_site niet geslaagd"])
+            except Exception:
+                q["checks"]["validate"] = "unknown"
+        else:
+            q["checks"]["validate"] = "not_run"
+
+        cv = vdir / "content_validation.json"
+        if cv.exists():
+            try:
+                cvd = json.loads(cv.read_text(encoding="utf-8"))
+                q["checks"]["content"] = "pass" if cvd.get("ready") else "fail"
+                if cvd.get("critical"):
+                    q["blockers"].extend(cvd["critical"])
+            except Exception:
+                q["checks"]["content"] = "unknown"
+        else:
+            q["checks"]["content"] = "not_run"
+            q["blockers"].append("Content-check niet uitgevoerd")
+
+        sj = vdir / "screenshot_validation.json"
+        if sj.exists():
+            try:
+                sd = json.loads(sj.read_text(encoding="utf-8"))
+                issues = sd.get("total_issues", 0)
+                q["checks"]["visual"] = "pass" if issues == 0 else "fail"
+                q["visual_issues"] = issues
+                if issues > 0:
+                    all_i = [i for p in sd.get("results", []) for i in p.get("issues", [])]
+                    q["blockers"].extend(all_i[:3])
+                    if len(all_i) > 3:
+                        q["blockers"].append(f"... en {len(all_i) - 3} andere visuele issue(s)")
+            except Exception:
+                q["checks"]["visual"] = "unknown"
+        else:
+            q["checks"]["visual"] = "not_run"
+            q["blockers"].append("Screenshot-validatie niet uitgevoerd")
+
+        q["ready"] = len(q["blockers"]) == 0
+        return q
+
+    # ── Repair-and-retry: max 2 rondes, daarna auto_failed ────────────────────
+    from auto_repair import run_repair_cycle
+
+    shot_json    = validate_dir / "screenshot_validation.json"
+    image_manifest_path = collected_path / "images.json"
+
+    for repair_round in range(MAX_REPAIR_ROUNDS + 1):
+        quality = _build_quality(validate_dir, json_out)
+
+        # Sla quality report op
         try:
-            vdata = json.loads(json_out.read_text(encoding="utf-8"))
-            passed = vdata.get("status") == "PASS"
-            quality["checks"]["validate"] = "pass" if passed else "fail"
-            if not passed:
-                failures = [i["message"] for i in vdata.get("issues", []) if i.get("level") == "FAIL"]
-                if failures:
-                    quality["blockers"].extend(failures[:3])
-                else:
-                    quality["blockers"].append("validate_generated_site niet geslaagd")
+            if validate_dir.exists():
+                (validate_dir / "quality_report.json").write_text(
+                    json.dumps(quality, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
         except Exception:
-            quality["checks"]["validate"] = "unknown"
-    else:
-        quality["checks"]["validate"] = "not_run"
+            pass
 
-    # 3. Content — kritieke issues zijn blockers
-    content_val = out_dir / "content_validation.json" if out_dir.exists() else None
-    if content_val and content_val.exists():
-        try:
-            cv = json.loads(content_val.read_text(encoding="utf-8"))
-            critical = cv.get("critical", [])
-            quality["checks"]["content"] = "pass" if cv.get("ready") else "fail"
-            if critical:
-                quality["blockers"].extend(critical)
-        except Exception:
-            quality["checks"]["content"] = "unknown"
-    else:
-        quality["checks"]["content"] = "not_run"
-        quality["blockers"].append("Content-check niet uitgevoerd")
+        if quality["ready"]:
+            log(f"[OK]  Quality gate geslaagd (ronde {repair_round}) — site klaar")
+            break
 
-    # 4. Screenshot — issues na hervalidatie zijn blockers (post-repair = definitief)
-    shot_json = out_dir / "screenshot_validation.json" if out_dir.exists() else None
-    if shot_json and shot_json.exists():
-        try:
-            sdata = json.loads(shot_json.read_text(encoding="utf-8"))
-            issues = sdata.get("total_issues", 0)
-            quality["checks"]["visual"] = "pass" if issues == 0 else "fail"
-            quality["visual_issues"] = issues
-            if issues > 0:
-                # Visuele problemen na repair zijn blockers
-                all_issues = [i for p in sdata.get("results", []) for i in p.get("issues", [])]
-                quality["blockers"].extend(all_issues[:3])
-                if len(all_issues) > 3:
-                    quality["blockers"].append(f"... en {len(all_issues) - 3} andere visuele issue(s)")
-        except Exception:
-            quality["checks"]["visual"] = "unknown"
-    else:
-        # Screenshot niet gedraaid = onbekend risico = blocker
-        quality["checks"]["visual"] = "not_run"
-        quality["blockers"].append("Screenshot-validatie niet uitgevoerd — visuele kwaliteit onbekend")
+        if repair_round >= MAX_REPAIR_ROUNDS:
+            log(f"[FAIL] Quality gate na {MAX_REPAIR_ROUNDS} repair-rondes nog steeds niet geslaagd")
+            log(f"       Blockers: {quality['blockers'][:3]}")
+            break
 
-    # Definitieve readiness: alleen blockers bepalen of site done is
-    quality["ready"] = len(quality["blockers"]) == 0
+        log(f"\n[INFO] Auto-repair ronde {repair_round + 1}/{MAX_REPAIR_ROUNDS}")
+        log(f"       {len(quality['blockers'])} blocker(s) te repareren")
+        update_prospect(company_name, site_status="auto_repairing")
+        write_status(running=True, prospect=company_name,
+                     step=f"auto_repair_round_{repair_round + 1}", step_n=n, total=total)
 
-    # Sla quality report op
-    try:
-        if out_dir.exists():
-            (out_dir / "quality_report.json").write_text(
-                json.dumps(quality, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-    except Exception:
-        pass
+        # Nav-routes ophalen voor page-regeneratie
+        nav_routes_repair: list[str] = []
+        if pages_path.exists():
+            try:
+                pd = json.loads(pages_path.read_text(encoding="utf-8"))
+                nav_routes_repair = [""] + [p["file"].replace(".html", "") for p in pd.get("pages", [])]
+            except Exception:
+                pass
 
+        fixed = run_repair_cycle(
+            blockers=quality["blockers"],
+            site_dir=validate_dir,
+            collected_path=collected_path,
+            project_dir=project_dir,
+            briefing_path=briefing_path,
+            company_name=company_name,
+            image_manifest=image_manifest_path if image_manifest_path.exists() else None,
+            nav_routes=nav_routes_repair,
+            round_num=repair_round + 1,
+            screenshot_json=shot_json if shot_json.exists() else None,
+            log_fn=log,
+        )
+        log(f"[INFO] Repair ronde {repair_round + 1}: {sum(fixed.values())} actie(s) ondernomen")
+
+        # Hervalideer na repair (screenshot herdraaien als visuele issues waren)
+        has_visual = any("visueel" in b.lower() or "contrast" in b.lower() or "screenshot" in b.lower()
+                         for b in quality["blockers"])
+        if has_visual:
+            n += 1
+            log("[INFO] Screenshot hervalidatie na auto-repair...")
+            step_screenshot_validate(validate_dir, n, total, company_name)
+
+        # Content-check opnieuw
+        n += 1
+        step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
+
+        # Rebuild als er nieuwe TSX-bestanden zijn
+        has_regen = any(t in fixed for t in ("missing_page", "visual_issue"))
+        if has_regen:
+            n += 1
+            log("[INFO] Rebuild na pagina-regeneratie...")
+            if not step_build_nextjs(project_dir, n, total, company_name):
+                log("[WARN] Rebuild na repair mislukt — quality check op huidige /out")
+
+    # ── Definitieve status ─────────────────────────────────────────────────────
     ready = quality["ready"]
     if ready:
-        log("[OK]  Quality gate geslaagd — site klaar voor presentatie")
         mark_site_done(company_name)
         update_prospect(company_name, review_status="ready")
+        log("[OK]  Pipeline voltooid — site verkoopbaar")
     else:
-        log(f"[WARN] Quality gate: {len(quality['blockers'])} blocker(s)")
-        for b in quality["blockers"]:
-            log(f"       - {b}")
-        log("[INFO] Site_status NIET op done gezet — handmatige review vereist")
-        update_prospect(company_name, site_status="needs_review", review_status="needs_review")
+        log("[FAIL] Site niet automatisch herstelbaar — auto_failed")
+        update_prospect(company_name, site_status="auto_failed", review_status="auto_failed")
 
     write_status(running=False, prospect=company_name, step="done",
-                 result="ready" if ready else "needs_review")
+                 result="ready" if ready else "auto_failed")
 
     log(f"\n{'═' * 60}")
     log(f"[OK] Pipeline voltooid voor: {company_name}")

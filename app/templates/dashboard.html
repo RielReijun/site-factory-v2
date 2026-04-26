@@ -1923,7 +1923,9 @@ function render(prospects) {
     let statusClass = 'status-pending';
     let filterKey   = 'in-progress';
     if (p.deploy_status === 'done' || p.github_url)          { statusClass = 'status-deployed';     filterKey = 'deployed'; }
-    else if (p.needs_review)                                 { statusClass = 'status-needs-review'; filterKey = 'done'; }
+    else if (p.review_status === 'auto_failed' || p.site_status === 'auto_failed')
+                                                             { statusClass = 'status-failed';       filterKey = 'failed'; }
+    else if (p.site_status === 'auto_repairing')             { statusClass = 'status-running';      filterKey = 'in-progress'; }
     else if (p.all_done)                                     { statusClass = 'status-done';         filterKey = 'done'; }
     else if (p.status === 'failed')                          { statusClass = 'status-failed';   filterKey = 'failed'; }
     else if (p.status === 'insufficient')                    { statusClass = 'status-insufficient'; filterKey = 'failed'; }
@@ -1962,9 +1964,11 @@ function render(prospects) {
     // Readiness chip
     let readinessChip = '';
     const r = p.readiness || {};
-    if (p.needs_review) {
-      const issues = (r.content_critical || []).slice(0, 2).map(w => esc(w)).join(' / ');
-      readinessChip = `<span class="chip" style="background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)" title="${issues}">⚠ Needs review</span>`;
+    if (r.review === 'auto_failed' || p.site_status === 'auto_failed') {
+      const blockers = (r.blockers || []).slice(0, 2).map(w => esc(w)).join(' / ');
+      readinessChip = `<span class="chip" style="background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)" title="${blockers}">✗ Auto failed</span>`;
+    } else if (p.site_status === 'auto_repairing') {
+      readinessChip = `<span class="chip" style="background:rgba(56,189,248,.15);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)">⟳ Repairing</span>`;
     } else if (r.review === 'ready') {
       readinessChip = `<span class="chip" style="background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25)" title="Build ✓ Content ✓ Visual ✓">✓ Ready</span>`;
     }
