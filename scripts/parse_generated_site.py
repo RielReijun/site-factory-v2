@@ -116,9 +116,46 @@ def _strip_code_fence(content: str) -> str:
         return content
     if lines[0].strip().startswith("```"):
         lines.pop(0)
-    if lines and lines[-1].strip() == "```":
+    if lines and lines[-1].strip().startswith("```"):
         lines.pop()
     return "\n".join(lines)
+
+
+def _extract_code_fence_fallback(raw: str) -> list[dict]:
+    """
+    Fallback: als er geen ===FILE: markers zijn maar wel markdown code fences,
+    probeer het bestandspad te extraheren uit de omringende tekst.
+
+    Ondersteunde patronen:
+    - "copy it to `src/app/X/page.tsx`"
+    - "Here is the complete file for `src/app/X/page.tsx`"
+    - "```tsx\n...code...\n```"
+    """
+    import re
+
+    # Zoek bestandspad in omringende tekst (voor de code fence)
+    path_pat = re.compile(
+        r"(?:copy it to|file(?:name)?(?:\s+for)?|content for|in)\s+[`'\"]?(src/[^\s`'\"]+\.(tsx|ts|css|json))[`'\"]?",
+        re.IGNORECASE,
+    )
+    match = path_pat.search(raw)
+    if not match:
+        return []
+
+    filepath = match.group(1)
+
+    # Extract code fence inhoud
+    fence_pat = re.compile(r"```(?:tsx|ts|jsx|js|css|json|typescriptreact)?\s*\n(.*?)```", re.DOTALL)
+    fence_match = fence_pat.search(raw)
+    if not fence_match:
+        return []
+
+    code = fence_match.group(1).strip()
+    if not code:
+        return []
+
+    print(f"[INFO] parse: code-fence fallback voor {filepath} ({len(code)} tekens)")
+    return [{"filename": filepath, "content": code, "truncated": False}]
 
 
 def validate_blocks(blocks: list[dict]) -> tuple[bool, list[tuple[str, str]]]:
@@ -226,6 +263,10 @@ def main():
     except ValueError as e:
         print(f"[FAIL] Parse fout: {e}")
         sys.exit(1)
+
+    # Fallback: als geen ===FILE: blokken, probeer code-fence extractie
+    if not blocks:
+        blocks = _extract_code_fence_fallback(raw)
 
     # Valideer blokken
     ok, issues = validate_blocks(blocks)

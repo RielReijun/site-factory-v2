@@ -39,7 +39,7 @@ def _sanitize_pages(raw_pages: list) -> list:
     return clean
 
 
-def discover_pages(client: Anthropic, model: str, briefing_text: str,
+def discover_pages(client, model: str, briefing_text: str,
                    company_name: str) -> tuple[list[dict], list[dict]]:
     prompt = f"""
 Je bent een senior webstrateeg.

@@ -15,7 +15,8 @@ MAX_COMP_PAGES       = 3    # homepage + max 2 interne pagina's per concurrent
 CRAWL_TIMEOUT        = 15   # seconden per HTTP-request
 
 # ── Generatie ─────────────────────────────────────────────────────────────────
-MAX_WORKERS          = 3    # parallelle threads voor pagina-generatie
+import os as _os
+MAX_WORKERS          = 1 if _os.getenv("USE_CLAUDE_MAX", "").lower() in ("true", "1", "yes") else 3    # 1 bij Claude Max (serieel), 3 bij API
 MAX_RATE_RETRIES     = 5    # max pogingen bij rate-limit in generate_site.py
 RETRY_BASE_WAIT      = 30.0 # seconden basiswachttijd voor exponential backoff
 

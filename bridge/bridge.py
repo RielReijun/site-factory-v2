@@ -67,15 +67,15 @@ def claude_api():
     try:
         result = subprocess.run(
             [CLAUDE_BIN, "--print", "--output-format", "text", full_prompt],
-            cwd=str(PROJECT_DIR),
-            capture_output=True, text=True, timeout=300,
+            cwd="/tmp",  # neutrale dir — geen CLAUDE.md/project-context die tool-use triggert
+            capture_output=True, text=True, timeout=600,
         )
         if result.returncode == 0:
             return json.dumps({"content": result.stdout.strip(), "error": None}), 200, {"Content-Type": "application/json"}
         else:
             return json.dumps({"content": "", "error": result.stderr.strip() or "Claude fout"}), 500, {"Content-Type": "application/json"}
     except subprocess.TimeoutExpired:
-        return json.dumps({"content": "", "error": "Timeout na 300s"}), 504, {"Content-Type": "application/json"}
+        return json.dumps({"content": "", "error": "Timeout na 600s"}), 504, {"Content-Type": "application/json"}
     except Exception as e:
         return json.dumps({"content": "", "error": str(e)}), 500, {"Content-Type": "application/json"}
 

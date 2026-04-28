@@ -110,7 +110,7 @@ class _MaxMessages:
                 r = requests.post(
                     f"{BRIDGE_URL}/api/claude",
                     json={"prompt": prompt, "system": system},
-                    timeout=310,
+                    timeout=620,
                 )
                 data = r.json()
                 if data.get("error"):

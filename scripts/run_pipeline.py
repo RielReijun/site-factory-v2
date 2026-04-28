@@ -342,13 +342,19 @@ _FAKE_LUCIDE_ICONS = {
     "Instagram": "Camera", "Facebook": "Globe", "Twitter": "MessageCircle",
     "Whatsapp": "MessageCircle", "WhatsApp": "MessageCircle", "TikTok": "Video",
     "Pinterest": "Image", "Snapchat": "Camera", "Youtube": "Play",
-    "LinkedIn": "Briefcase", "Telegram": "Send",
+    "LinkedIn": "Briefcase", "Linkedin": "Globe", "Telegram": "Send",
     # Nederlandse namen (Claude hallucineet soms Nederlands)
     "Telefoon": "Phone", "Telefoonnummer": "Phone",
+    "SmartTelefoon": "Smartphone", "SmartPhone": "Smartphone",
+    "MegaTelefoon": "Phone", "MobielTelefoon": "Smartphone",
     "Mail": "Mail",  # Mail bestaat wel, maar voor de zekerheid
     "E-mail": "Mail", "Email": "Mail",
     "Adres": "MapPin", "Locatie": "MapPin",
     "Website": "Globe", "Klok": "Clock", "Sterren": "Star",
+    "Gebouw": "Building2", "Kantoor": "Building2",
+    "Winkelwagen": "ShoppingCart", "Winkeltas": "ShoppingBag",
+    "Beveiliging": "Shield", "Sleutel": "Key",
+    "Grafiek": "BarChart2", "Statistiek": "BarChart",
 }
 
 
@@ -377,6 +383,23 @@ def _fix_lucide_icons(project_dir: Path) -> None:
                 # Vervang ook als JSX-component in de code (<Fake ... />)
                 new = re.sub(rf'<{re.escape(fake)}(\s|/>)', f'<{replacement}\\1', new)
                 new = re.sub(rf'</{re.escape(fake)}>', f'</{replacement}>', new)
+                # Vervang ook als identifier in objecten/arrays (icon: Fake, of [Fake,])
+                # maar NIET in strings
+                new = re.sub(
+                    rf'(?<!["\'\w])\b{re.escape(fake)}\b(?!["\'\w])',
+                    replacement, new
+                )
+            # Dedupliceer import namen (vervanging kan duplicaten veroorzaken)
+            def _dedup_import(m):
+                before, names_str, after = m.group(1), m.group(2), m.group(3)
+                names = [n.strip() for n in re.split(r',\s*', names_str) if n.strip()]
+                seen: set[str] = set()
+                deduped = [n for n in names if not (n in seen or seen.add(n))]
+                return before + ", ".join(deduped) + after
+            new = re.sub(
+                r'(import\s*\{)([^}]+)(\}\s*from\s*["\']lucide-react["\'])',
+                _dedup_import, new, flags=re.DOTALL,
+            )
             if new != content:
                 tsx.write_text(new, encoding="utf-8")
                 fixed += 1
@@ -521,11 +544,11 @@ def _fix_icon_as_text(project_dir: Path) -> None:
         try:
             c = tsx.read_text(encoding="utf-8")
             orig = c
-            # Alleen in string-content (JSX tekst), niet in import/tag namen
-            # Zoek op patronen zoals: Stuur een MessageCircle-bericht
+            # Alleen aanpassen als er een Nederlandse context-suffix staat
+            # (bericht/link/knop/icoon) om code-identifiers intact te laten.
             for pat, repl in REPLACEMENTS.items():
                 c = _re.sub(
-                    rf'(Stuur een |Bel via |via |een )?{pat}(-bericht|-link|-knop)?\b',
+                    rf'\b{pat}-(?:bericht|link|knop|icoon)\b',
                     repl,
                     c,
                     flags=_re.IGNORECASE,
@@ -1006,6 +1029,11 @@ def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> b
     log(f"[STAP {n}/{total}] build_nextjs")
     log(f"{'─' * 60}")
     write_status(running=True, prospect=prospect, step="build_nextjs", step_n=n, total=total)
+
+    # Verwijder basePath voor de build — anders genereert Next.js alleen index.html
+    # en RSC .txt voor subpagina's i.p.v. volledige HTML-export.
+    slug = project_dir.name.replace("-next", "")
+    _write_nextjs_config(project_dir, slug, for_deploy=True)
 
     # TypeScript pre-check: vang fouten vroeg op zonder volledige build
     ts_proc = subprocess.run(
