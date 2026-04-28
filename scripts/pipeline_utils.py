@@ -140,3 +140,20 @@ def get_model() -> str:
     """Geef het geconfigureerde Anthropic-model terug."""
     import os
     return os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+
+def get_claude_client(api_key: str = ""):
+    """
+    Geeft de juiste Claude-client op basis van USE_CLAUDE_MAX env-variabele.
+
+    USE_CLAUDE_MAX=true  → ClaudeMaxClient (via bridge, gebruikt Max-abonnement)
+    USE_CLAUDE_MAX=false → anthropic.Anthropic() (API-billing)
+
+    Zet in .env:
+      USE_CLAUDE_MAX=true    # gratis via Max-abonnement
+      USE_CLAUDE_MAX=false   # of weglaten voor API-billing
+    """
+    import sys
+    sys.path.insert(0, str(SCRIPTS_DIR))
+    from claude_max_client import get_claude_client as _get
+    return _get(api_key)

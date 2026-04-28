@@ -46,6 +46,40 @@ def health():
     return {"ok": True, "claude": CLAUDE_BIN}
 
 
+@app.route("/api/claude", methods=["POST"])
+def claude_api():
+    """
+    Drop-in vervanging voor anthropic.messages.create() via Claude Max.
+    Verwacht: {"prompt": "...", "max_tokens": 4000, "system": "..."}
+    Geeft terug: {"content": "...", "error": null}
+    """
+    data       = request.get_json(silent=True) or {}
+    prompt     = data.get("prompt", "").strip()
+    system     = data.get("system", "").strip()
+    max_tokens = data.get("max_tokens", 8000)
+
+    if not prompt:
+        return {"error": "Geen prompt"}, 400
+
+    # Combineer system + user prompt voor claude --print
+    full_prompt = f"{system}\n\n{prompt}" if system else prompt
+
+    try:
+        result = subprocess.run(
+            [CLAUDE_BIN, "--print", "--output-format", "text", full_prompt],
+            cwd=str(PROJECT_DIR),
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode == 0:
+            return json.dumps({"content": result.stdout.strip(), "error": None}), 200, {"Content-Type": "application/json"}
+        else:
+            return json.dumps({"content": "", "error": result.stderr.strip() or "Claude fout"}), 500, {"Content-Type": "application/json"}
+    except subprocess.TimeoutExpired:
+        return json.dumps({"content": "", "error": "Timeout na 300s"}), 504, {"Content-Type": "application/json"}
+    except Exception as e:
+        return json.dumps({"content": "", "error": str(e)}), 500, {"Content-Type": "application/json"}
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data    = request.get_json(silent=True) or {}
