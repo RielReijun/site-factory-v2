@@ -594,6 +594,42 @@ def _fix_page_function_names(project_dir: Path) -> None:
             pass
 
 
+def _fix_header_pathname(project_dir: Path) -> None:
+    """
+    Voeg een 'mounted' guard toe aan Header.tsx voor usePathname().
+    In static Next.js exports rendert de server met pathname=null —
+    client rendert met echte pathname. Deze mismatch kan React-hydration
+    breken, waardoor useState/onClick niet werkt (mobiel menu kapot).
+
+    Fix: mounted=false op server, true na eerste client-render.
+    Active-state check alleen als mounted=true → geen hydration mismatch.
+    """
+    header = project_dir / "src" / "components" / "Header.tsx"
+    if not header.exists():
+        return
+    try:
+        c = header.read_text(encoding="utf-8")
+        if "usePathname" not in c or "mounted" in c:
+            return
+
+        # Voeg mounted state toe na de bestaande useState/usePathname
+        c = c.replace(
+            "const pathname = usePathname();",
+            "const pathname = usePathname();\n  const [mounted, setMounted] = useState(false);\n  useEffect(() => { setMounted(true); }, []);",
+        )
+        # Vervang isActive door een versie die altijd een functie is
+        # en 'mounted' gebruikt om hydration mismatch te voorkomen
+        c = re.sub(
+            r'const isActive\s*=\s*\(href[^)]*\)\s*=>[^\n]+(?:\n\s+[^\n;{]+;)?',
+            'const isActive = (href: string) => mounted && (href === "/" ? (pathname ?? "") === "/" : pathname?.startsWith(href));',
+            c,
+        )
+        header.write_text(c, encoding="utf-8")
+        log("[OK]  Header.tsx: mounted guard toegevoegd voor usePathname (fix mobiel menu)")
+    except Exception as e:
+        log(f"[WARN] _fix_header_pathname: {e}")
+
+
 def _fix_layout_tsx(project_dir: Path) -> None:
     """
     Repareer veelvoorkomende syntax-problemen in layout.tsx:
@@ -1520,6 +1556,7 @@ def main():
         _fix_icon_as_text(project_dir)
         _fix_nav_spacing(project_dir)
         _fix_client_components(project_dir)
+        _fix_header_pathname(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1
