@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from anthropic import Anthropic
+from pipeline_utils import get_claude_client
 from validate_brief import validate_brief, REQUIRED_HEADINGS
 
 
@@ -258,7 +258,7 @@ def main():
         for item in hard_risks:
             print(f"       ! {item['section']}: '{item['match']}'")
 
-        client = Anthropic(api_key=api_key)
+        client = get_claude_client(api_key)
         prompt = build_repair_prompt(repaired_brief, validation_result)
 
         patch_text = ""

@@ -20,6 +20,8 @@ import threading
 import time
 from pathlib import Path
 
+from pipeline_utils import get_claude_client
+
 VISION_PROMPT = """Je bekijkt een screenshot van een gegenereerde statische website.
 Beoordeel de pagina op de volgende visuele problemen en geef elk gevonden probleem een korte beschrijving.
 Wees specifiek — zeg niet "mogelijk contrast-probleem", maar "witte tekst op witte achtergrond in de hero-sectie".
@@ -184,11 +186,10 @@ def main():
 
     all_results: list[dict] = []
 
+    client = get_claude_client(api_key)
+
     try:
         from playwright.sync_api import sync_playwright
-        from anthropic import Anthropic
-
-        client = Anthropic(api_key=api_key)
 
         with sync_playwright() as pw:
             browser = pw.chromium.launch(

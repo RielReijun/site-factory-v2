@@ -20,7 +20,19 @@ from typing import Any, Iterator
 
 import requests
 
-BRIDGE_URL = os.getenv("BRIDGE_URL", "http://host.docker.internal:8182")
+def _resolve_bridge_url() -> str:
+    """Probeer host.docker.internal, val terug op het standaard Docker gateway-adres."""
+    default = os.getenv("BRIDGE_URL", "http://host.docker.internal:8182")
+    if "host.docker.internal" not in default:
+        return default
+    try:
+        import socket
+        socket.getaddrinfo("host.docker.internal", 8182, timeout=1)
+        return default
+    except Exception:
+        return "http://172.31.0.1:8182"
+
+BRIDGE_URL = _resolve_bridge_url()
 
 
 # ── Nep-response objecten die de Anthropic SDK nabootsen ─────────────────────

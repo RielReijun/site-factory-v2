@@ -25,6 +25,8 @@ import re
 import sys
 from pathlib import Path
 
+from pipeline_utils import get_claude_client
+
 
 FILE_MARKER_RE = re.compile(r'===FILE:[^\n]*\n?|===END_FILE===\n?')
 A_HREF_RE      = re.compile(r'(<a\b[^>]*\bhref=["\'])([^"\']+)(["\'])', re.IGNORECASE)
@@ -252,8 +254,7 @@ def fix_screenshot_issues(site_dir: Path, screenshot_json: Path) -> int:
     if not api_key:
         return 0
 
-    from anthropic import Anthropic
-    client = Anthropic(api_key=api_key)
+        client = get_claude_client(api_key)
     model  = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
     # Lees CSS-context uit _next/static/chunks/ voor betere overrides

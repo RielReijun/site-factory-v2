@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from anthropic import Anthropic
+from pipeline_utils import get_claude_client
 
 from pipeline_utils import slugify, load_prospects, get_model, PROSPECTS_FILE, DATA_DIR
 
@@ -84,7 +84,7 @@ Verwijs expliciet naar de demo-URL: {demo_url}
 Gebruik GEEN em-dashes (—). Gebruik een komma of punt waar dat natuurlijker klinkt.
 """
 
-    client   = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
     response = client.messages.create(
         model=model,
         max_tokens=600,

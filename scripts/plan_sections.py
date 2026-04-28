@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-from anthropic import Anthropic
+from pipeline_utils import get_claude_client
 from component_registry import get_schema_description
 from pipeline_utils import get_model, with_retry
 
@@ -178,7 +178,7 @@ def main():
         except Exception:
             pass
 
-    client = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
     model  = get_model()
 
     # Sitemap URL opslaan (wordt gebruikt door next-sitemap na de build)

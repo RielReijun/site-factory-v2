@@ -12,7 +12,7 @@ import os
 import re
 from pathlib import Path
 
-from anthropic import Anthropic
+from pipeline_utils import get_claude_client
 
 MAX_AUTO_PAGES = 20
 
@@ -110,7 +110,7 @@ def main():
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY ontbreekt")
 
-    client        = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
     briefing_text = Path(args.brief).read_text(encoding="utf-8", errors="ignore")
 
     print(f"[INFO] Pagina's ontdekken voor: {args.company}")

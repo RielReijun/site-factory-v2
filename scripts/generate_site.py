@@ -4,7 +4,7 @@ import os
 import time
 from pathlib import Path
 
-from anthropic import Anthropic
+from pipeline_utils import get_claude_client
 
 PROMPTS_DIR = Path("/workspace/prompts/impeccable")
 
@@ -400,7 +400,7 @@ def main():
     }
     max_tokens = UNIT_MAX_TOKENS.get(args.unit, 8000)
 
-    client = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
     print(f"[INFO] Model: {model} | unit: {args.unit} | max_tokens: {max_tokens}")
 
     messages_payload = [{

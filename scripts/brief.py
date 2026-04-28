@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 
-from anthropic import Anthropic
+from pipeline_utils import get_claude_client
 
 from pipeline_utils import load_prospects, read_text_file, get_model, PROSPECTS_FILE
 
@@ -274,7 +274,7 @@ def main():
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY ontbreekt in environment")
 
-    client = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
 
     prospects = load_prospects()
     index, prospect = find_prospect(prospects, name=args.name, force=args.force)

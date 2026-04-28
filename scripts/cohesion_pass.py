@@ -15,6 +15,8 @@ import re
 import sys
 from pathlib import Path
 
+from pipeline_utils import get_claude_client
+
 
 COHESION_PROMPT = """Je bent een senior front-end developer die een gegenereerde website controleert op consistentie.
 
@@ -112,8 +114,7 @@ def run(site_dir: Path, max_subpage_chars: int = 2500, css_tail_chars: int = 600
 
     print(f"[INFO] cohesion_pass: {len(subpages_parts)} subpagina's analyseren...")
 
-    from anthropic import Anthropic
-    client = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
 
     try:
         response = client.messages.create(
@@ -241,8 +242,7 @@ def spot_check(site_dir: Path) -> int:
         server.shutdown()
 
     # Analyseer met Claude Vision
-    from anthropic import Anthropic
-    client = Anthropic(api_key=api_key)
+    client = get_claude_client(api_key)
     img_b64 = base64.standard_b64encode(shot_path.read_bytes()).decode()
 
     try:

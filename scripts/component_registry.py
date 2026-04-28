@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from template_engine import (
     render, load_template, collect_icons, list_sections, safe_icon, SAFE_ICONS
 )
+from pipeline_utils import get_claude_client
 
 SHADCN_IMPORTS = {
     "Accordion": 'import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";',
@@ -136,10 +137,9 @@ Stijlreferentie (bestaande template):
 Genereer nu de template voor {section_type}/{variant}:"""
 
     try:
-        from anthropic import Anthropic
         from pipeline_utils import get_model, with_retry
 
-        client = Anthropic(api_key=api_key)
+        client = get_claude_client(api_key)
         model  = get_model()
 
         response = with_retry(
