@@ -617,11 +617,13 @@ def _fix_header_pathname(project_dir: Path) -> None:
             "const pathname = usePathname();",
             "const pathname = usePathname();\n  const [mounted, setMounted] = useState(false);\n  useEffect(() => { setMounted(true); }, []);",
         )
-        # Vervang isActive door een versie die altijd een functie is
-        # en 'mounted' gebruikt om hydration mismatch te voorkomen
+        # Vervang isActive door een versie die altijd callable is en
+        # mounted gebruikt om hydration mismatch te voorkomen.
+        # Let op: raak de aanroepen (isActive(href)) NIET aan — alleen de definitie.
         c = re.sub(
-            r'const isActive\s*=\s*\(href[^)]*\)\s*=>[^\n]+(?:\n\s+[^\n;{]+;)?',
-            'const isActive = (href: string) => mounted && (href === "/" ? (pathname ?? "") === "/" : pathname?.startsWith(href));',
+            r'(const isActive\s*=\s*)(?:mounted\s*\?\s*[^\n:]+:\s*false;?|'
+            r'\(href[^)]*\)\s*=>\s*[^\n;]+(?:\n\s+[^\n;]+;)?)',
+            r'const isActive = (href: string) => mounted && (href === "/" ? (pathname ?? "") === "/" : pathname?.startsWith(href));',
             c,
         )
         header.write_text(c, encoding="utf-8")
