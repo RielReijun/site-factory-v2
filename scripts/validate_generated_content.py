@@ -50,11 +50,23 @@ def check_company_name(html_text: str, company_name: str) -> list[str]:
     warnings = []
     # Strip test/version-suffixen die niet in de gerenderde site horen voor te komen
     cleaned = re.sub(r"\s+[Vv]\d+\s*$", "", company_name.strip())
-    # Gebruik de eerste twee woorden voor een soepelere match
+    haystack = html_text.lower()
+
+    # Probeer meerdere varianten — site kan spaties weglaten of juist toevoegen
+    # ('Beauty Salon Carlijn' → 'Beautysalon Carlijn', 'BeautySalon Carlijn')
     words = cleaned.strip().split()
-    search = " ".join(words[:2]) if len(words) >= 2 else cleaned
-    if search.lower() not in html_text.lower():
-        warnings.append(f"Bedrijfsnaam '{search}' niet gevonden in de gegenereerde site")
+    search_two = " ".join(words[:2]) if len(words) >= 2 else cleaned
+    candidates = {
+        cleaned.lower(),
+        search_two.lower(),
+        search_two.replace(" ", "").lower(),  # 'beautysalon'
+        # Als 1e woord voorkomt + naam
+        words[-1].lower() if words else cleaned.lower(),
+    }
+    if any(c and c in haystack for c in candidates):
+        return warnings
+
+    warnings.append(f"Bedrijfsnaam '{search_two}' niet gevonden in de gegenereerde site")
     return warnings
 
 

@@ -457,13 +457,41 @@ def _fix_client_components(project_dir: Path) -> None:
         "useState", "useEffect", "useRef", "useCallback", "useMemo",
         "LeafletMap", "GalleryCarousel", "BookingWidget", "Sheet",
     ]
-    METADATA_RE = _re.compile(
-        r'\nexport const metadata(?:\s*:\s*\w+)?\s*=\s*\{.*?\};\s*\n',
-        _re.DOTALL,
-    )
     METADATA_IMPORT_RE = _re.compile(
         r'import (?:type )?\{ [^}]*Metadata[^}]* \} from [^\n]+\n'
     )
+
+    def _strip_metadata_export(text: str) -> str:
+        """
+        Verwijder 'export const metadata[:Metadata] = { ... }' met brace-balancing
+        (regex faalt als het blok op een nieuwe regel eindigt zonder ';').
+        """
+        m = _re.search(r'export\s+const\s+metadata\s*(?::\s*\w+\s*)?[:=]', text)
+        if not m:
+            return text
+        start = m.start()
+        # Stap terug naar de regel-start (incl. eventuele leading newline)
+        while start > 0 and text[start - 1] != "\n":
+            start -= 1
+        # Vind de openende {
+        brace = text.find("{", m.end())
+        if brace == -1:
+            return text
+        # Balanceer braces
+        depth = 1
+        i = brace + 1
+        while i < len(text) and depth > 0:
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+            i += 1
+        # Skip optionele ';' en whitespace tot newline
+        while i < len(text) and text[i] in " ;\t":
+            i += 1
+        if i < len(text) and text[i] == "\n":
+            i += 1
+        return text[:start] + text[i:]
 
     for tsx in sorted(app_dir.rglob("*/page.tsx")):
         try:
@@ -478,7 +506,7 @@ def _fix_client_components(project_dir: Path) -> None:
 
             # Verwijder metadata export uit client components
             if is_client and "export const metadata" in c:
-                c = METADATA_RE.sub("\n", c)
+                c = _strip_metadata_export(c)
                 # Verwijder Metadata import als niet meer gebruikt
                 if "Metadata" not in c.replace("import", ""):
                     c = METADATA_IMPORT_RE.sub("", c)
