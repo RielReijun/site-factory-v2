@@ -1183,6 +1183,16 @@ def _run_unit_buffered(
     label = page_slug or unit_key
     lines = [f"\n{'─' * 60}", f"[UNIT] {label}", f"{'─' * 60}"]
 
+    # Smart resume: skip page-units waarvoor de TSX al bestaat. Layout en home
+    # regenereren we altijd (snel en cruciaal als referentie). 'page'-units met
+    # een bestaande, niet-lege page.tsx slaan we over zodat resume na een
+    # interruptie alleen de ontbrekende pages doet.
+    if unit_key == "page" and page_slug and not os.getenv("FORCE_REGEN", "").lower() in ("true", "1"):
+        existing_tsx = project_dir / "src" / "app" / page_slug / "page.tsx"
+        if existing_tsx.exists() and existing_tsx.stat().st_size > 500:
+            lines.append(f"[SKIP] {label}: page.tsx bestaat al ({existing_tsx.stat().st_size} bytes)")
+            return True, label, lines
+
     gen_cmd = [
         "python", str(SCRIPTS_DIR / "generate_site.py"),
         "--brief",   str(briefing_path),
