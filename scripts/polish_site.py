@@ -66,10 +66,15 @@ def deduplicate_pages(site_dir: Path) -> list[str]:
         if not f.name.startswith("_") and "_next" not in str(f)
     ]
 
-    # Groepeer op genormaliseerde naam
+    # Groepeer op genormaliseerde naam — voor Next.js exports (about/index.html)
+    # nemen we de parent-dir mee zodat over-ons/index.html en about/index.html
+    # NIET als duplicaten gezien worden.
     groups: dict[str, list[Path]] = {}
     for f in html_files:
-        key = _normalize_name(f.stem)
+        if f.name == "index.html" and f.parent != site_dir:
+            key = _normalize_name(f.parent.name)
+        else:
+            key = _normalize_name(f.stem)
         groups.setdefault(key, []).append(f)
 
     fixes: list[str] = []
