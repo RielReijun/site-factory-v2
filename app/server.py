@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests as _requests
-from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_from_directory, stream_with_context
 
 
 PROSPECTS_FILE = Path("/workspace/data/prospects.json")
@@ -1239,6 +1239,34 @@ def serve_nextjs_root_assets(filename):
         asset    = site_dir / "_next" / filename
         if asset.exists():
             return send_from_directory(str(site_dir / "_next"), filename)
+    abort(404)
+
+
+@app.get("/<path:rootpath>")
+def serve_root_relative_via_referer(rootpath):
+    """
+    Vang root-relatieve site-navigatie op die voortkomt uit een /sites/<slug>/-pagina.
+    Bijv.: gebruiker is op /sites/relayter/, klikt op <a href="/about/"> →
+    browser doet GET /about/ → redirect naar /sites/relayter/about/.
+    Alleen actief als Referer een /sites/<slug>/ bevat.
+    """
+    # Bekende systeem-paden die NIET door deze route afgevangen mogen worden
+    if rootpath.startswith(("api/", "static/", "sites/", "_next/", "assets/", "favicon")):
+        abort(404)
+    referer = request.headers.get("Referer", "")
+    m = re.search(r"/sites/([^/?#]+)", referer)
+    if not m:
+        abort(404)
+    slug = m.group(1)
+    site_dir = _find_site_dir(slug)
+    if not site_dir.exists():
+        abort(404)
+    # Probeer als directory met index.html
+    target = site_dir / rootpath.rstrip("/")
+    if target.is_dir() and (target / "index.html").exists():
+        return redirect(f"/sites/{slug}/{rootpath.rstrip('/')}/", code=302)
+    if (site_dir / rootpath).exists():
+        return redirect(f"/sites/{slug}/{rootpath}", code=302)
     abort(404)
 
 

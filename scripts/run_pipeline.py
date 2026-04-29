@@ -1023,57 +1023,6 @@ def _create_ui_components(project_dir: Path) -> None:
             pass
 
 
-def _rewrite_html_links_for_preview(out_dir: Path, slug: str) -> None:
-    """
-    Voeg /sites/<slug>/ prefix toe aan alle interne href/src/srcset in HTML.
-    Nodig omdat we zonder basePath bouwen (anders genereert Next.js geen subpagina-HTML),
-    maar de dashboard-preview wel onder /sites/<slug>/ serveert.
-    """
-    import re as _re
-    prefix = f"/sites/{slug}"
-    fixed = 0
-
-    def rewrite_attr(content: str) -> str:
-        def repl(m):
-            attr, url = m.group(1), m.group(2)
-            if url.startswith(("http://", "https://", "mailto:", "tel:", "#",
-                               f"{prefix}/", "//")):
-                return m.group(0)
-            if url == prefix or url == f"{prefix}/":
-                return m.group(0)
-            if url.startswith("/"):
-                return f'{attr}="{prefix}{url}"'
-            return m.group(0)
-        return _re.sub(r'\b(href|src|action)="([^"]+)"', repl, content)
-
-    def rewrite_srcset(content: str) -> str:
-        def repl(m):
-            parts = []
-            for entry in m.group(1).split(","):
-                entry = entry.strip()
-                if not entry:
-                    continue
-                url, *rest = entry.split()
-                if url.startswith("/") and not url.startswith(prefix + "/"):
-                    url = prefix + url
-                parts.append(" ".join([url] + rest))
-            return f'srcset="{", ".join(parts)}"'
-        return _re.sub(r'srcset="([^"]+)"', repl, content)
-
-    for html_path in out_dir.rglob("*.html"):
-        try:
-            content = html_path.read_text(encoding="utf-8", errors="ignore")
-            new = rewrite_attr(content)
-            new = rewrite_srcset(new)
-            if new != content:
-                html_path.write_text(new, encoding="utf-8")
-                fixed += 1
-        except Exception:
-            pass
-    if fixed:
-        log(f"[OK]  HTML-links herschreven met {prefix}/ prefix in {fixed} bestand(en)")
-
-
 def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> bool:
     """Run TypeScript check + npm run build in de Next.js projectdirectory."""
     log(f"\n{'─' * 60}")
@@ -1135,11 +1084,8 @@ def step_build_nextjs(project_dir: Path, n: int, total: int, prospect: str) -> b
         else:
             log(f"[FAIL] build_nextjs mislukt ook na auto-fix (exit {proc2.returncode})")
 
-    # Herschrijf interne links naar /sites/<slug>/ prefix voor dashboard-preview
-    if ok:
-        out_dir = project_dir / "out"
-        if out_dir.exists():
-            _rewrite_html_links_for_preview(out_dir, slug)
+    # Geen URL-rewrite: dashboard server redirect /<path>/ → /sites/<slug>/<path>/
+    # via Referer header (anders breekt React hydration door URL-mismatch).
 
     log(f"[INFO] Duur: {_fmt_duration(duration)}")
     return ok
