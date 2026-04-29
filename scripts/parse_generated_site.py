@@ -144,9 +144,14 @@ def _extract_code_fence_fallback(raw: str) -> list[dict]:
     """
     import re
 
-    # Zoek bestandspad in omringende tekst (voor de code fence)
+    # Zoek bestandspad in omringende tekst (voor de code fence). Ondersteun:
+    #  "copy it to `src/app/...`"
+    #  "Here is the file `src/app/...`"
+    #  "**`src/app/...`**"  (bold-fenced filename in markdown)
+    #  "### `src/app/...`"  (heading-style)
+    #  "`src/app/.../page.tsx`" (gewoon backtick voor codefence)
     path_pat = re.compile(
-        r"(?:copy it to|file(?:name)?(?:\s+for)?|content for|in)\s+[`'\"]?(src/[^\s`'\"]+\.(tsx|ts|css|json))[`'\"]?",
+        r"[`'\"*]\s*(src/[^\s`'\"*]+\.(?:tsx|ts|css|json))\s*[`'\"*]",
         re.IGNORECASE,
     )
     match = path_pat.search(raw)

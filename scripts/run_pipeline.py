@@ -1183,14 +1183,22 @@ def _run_unit_buffered(
     label = page_slug or unit_key
     lines = [f"\n{'─' * 60}", f"[UNIT] {label}", f"{'─' * 60}"]
 
-    # Smart resume: skip page-units waarvoor de TSX al bestaat. Layout en home
-    # regenereren we altijd (snel en cruciaal als referentie). 'page'-units met
-    # een bestaande, niet-lege page.tsx slaan we over zodat resume na een
-    # interruptie alleen de ontbrekende pages doet.
-    if unit_key == "page" and page_slug and not os.getenv("FORCE_REGEN", "").lower() in ("true", "1"):
-        existing_tsx = project_dir / "src" / "app" / page_slug / "page.tsx"
-        if existing_tsx.exists() and existing_tsx.stat().st_size > 500:
-            lines.append(f"[SKIP] {label}: page.tsx bestaat al ({existing_tsx.stat().st_size} bytes)")
+    # Smart resume: skip alle units waarvan de output al bestaat. Dat geldt voor
+    # page-units (eigen subdir/page.tsx) maar ook voor layout en home, omdat
+    # regenerate van die twee bij usage-druk soms een andere format produceert
+    # (zonder ===FILE: markers) waardoor de parser faalt en we juist iets
+    # werkends overschrijven met niets. Override met FORCE_REGEN=true.
+    force_regen = os.getenv("FORCE_REGEN", "").lower() in ("true", "1", "yes")
+    if not force_regen:
+        check_tsx = None
+        if unit_key == "page" and page_slug:
+            check_tsx = project_dir / "src" / "app" / page_slug / "page.tsx"
+        elif unit_key == "home":
+            check_tsx = project_dir / "src" / "app" / "page.tsx"
+        elif unit_key == "layout":
+            check_tsx = project_dir / "src" / "app" / "layout.tsx"
+        if check_tsx and check_tsx.exists() and check_tsx.stat().st_size > 500:
+            lines.append(f"[SKIP] {label}: bestaat al ({check_tsx.stat().st_size} bytes)")
             return True, label, lines
 
     gen_cmd = [
