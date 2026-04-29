@@ -126,8 +126,25 @@ def _strip_code_fence(content: str) -> str:
             continue
         new_lines.append(line)
     lines = new_lines
-    # Verwijder ALLE trailing fence-regels
-    while lines and lines[-1].strip().startswith("```"):
+    # Verwijder ALLE trailing fence-regels EN tussenliggende lege regels
+    # (Claude geeft soms ```\n\n``` aan het einde — beide moeten weg)
+    while lines and (
+        lines[-1].strip().startswith("```") or not lines[-1].strip()
+    ):
+        # Stop als we bij echte content komen die geen fence/empty is
+        if not lines[-1].strip().startswith("```") and not lines[-1].strip():
+            # Blanco regel: alleen poppen als er nog een fence onder zat
+            # Look ahead: strip max 5 trailing blanks die mogelijk tussen fences zitten
+            blank_count = 0
+            j = len(lines) - 1
+            while j >= 0 and not lines[j].strip():
+                blank_count += 1
+                j -= 1
+            if j >= 0 and lines[j].strip().startswith("```"):
+                # Er staat nog een fence onder die blanks: strip ze allemaal
+                lines = lines[:j]
+                continue
+            break
         lines.pop()
     return "\n".join(lines)
 
