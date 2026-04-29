@@ -123,8 +123,24 @@ def main():
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     model   = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    use_max = os.getenv("USE_CLAUDE_MAX", "").lower() in ("true", "1", "yes")
+
+    # Claude Max bridge ondersteunt geen image-input via 'claude --print'.
+    # Vision-analyse zou onzin retourneren en auto_repair zinloos triggeren.
+    if use_max:
+        print("[INFO] USE_CLAUDE_MAX actief, screenshot Vision-validatie overgeslagen "
+              "(claude --print ondersteunt geen image-input)")
+        # Schrijf lege resultaten zodat downstream stappen niet falen
+        out_path = site_dir / "screenshot_validation.json"
+        out_path.write_text(
+            json.dumps({"pages_checked": 0, "total_issues": 0, "results": []},
+                       indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        sys.exit(0)
+
     if not api_key:
-        print("[WARN] ANTHROPIC_API_KEY ontbreekt — screenshot-validatie overgeslagen")
+        print("[WARN] ANTHROPIC_API_KEY ontbreekt, screenshot-validatie overgeslagen")
         sys.exit(0)
 
     # Pagina-strategie:

@@ -195,6 +195,9 @@ def spot_check(site_dir: Path) -> int:
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     model   = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    if os.getenv("USE_CLAUDE_MAX", "").lower() in ("true", "1", "yes"):
+        # claude --print ondersteunt geen image-input, Vision-spotcheck overslaan
+        return 0
     if not api_key:
         return 0
 
