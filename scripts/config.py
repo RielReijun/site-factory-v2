@@ -4,9 +4,10 @@ config.py — Gecentraliseerde configuratieconstanten voor de site-factory pipel
 Importeer vanuit elk script in plaats van magic numbers inline te definiëren.
 """
 
+import os as _os_cfg
 # ── Crawler (collect.py) ──────────────────────────────────────────────────────
 CRAWL_DELAY  = 0.5   # seconden tussen requests
-MAX_PAGES    = 50    # maximaal aantal HTML-pagina's om te crawlen per site
+MAX_PAGES    = int(_os_cfg.getenv("CRAWLER_MAX_PAGES", "50"))    # max HTML-pagina's per site
 MAX_ASSETS   = 150   # maximaal aantal assets te downloaden per site
 
 # ── Research crawler ──────────────────────────────────────────────────────────

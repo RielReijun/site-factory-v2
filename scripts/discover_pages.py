@@ -14,7 +14,9 @@ from pathlib import Path
 
 from pipeline_utils import get_claude_client
 
-MAX_AUTO_PAGES = 20
+import os as _os
+# Default 20, override via env voor uitgebreide sites met veel sub-routes
+MAX_AUTO_PAGES = int(_os.getenv("MAX_AUTO_PAGES", "20"))
 
 
 def _sanitize_pages(raw_pages: list) -> list:
@@ -48,11 +50,14 @@ Analyseer de briefing voor **{company_name}** en stel een volledige paginalijst 
 
 ## Regels voor `pages` (worden automatisch gegenereerd)
 - index.html is de homepage en staat NIET in deze lijst
-- Maximum {MAX_AUTO_PAGES} pagina's
-- Combineer bewust kleine, verwante pagina's:
+- Maximum {MAX_AUTO_PAGES} pagina's, mik voor zo dicht mogelijk bij dit maximum
+  als de bron-site veel inhoudelijke pagina's heeft
+- Combineer alleen waar logisch:
   - privacy + algemene voorwaarden + disclaimer → legal.html
-  - FAQ + huisregels → info.html (of verwerk in over-ons)
-  - Meerdere kleine service-subcategorieën → één categorie-pagina
+  - FAQ + huisregels → info.html (of verwerk in over-ons) als ze beide kort zijn
+- **Behoud unieke content-pagina's apart** (technieken, toepassingen, projecten,
+  productcategorieën). B2B-sites hebben vaak veel sub-routes met unieke waarde,
+  voeg die NIET samen tenzij ze leeg of bijna identiek zijn
 - Behoud altijd minstens: over-ons.html, contact.html
 - Prioriteer pagina's met de hoogste bezoekers- en conversiewaarde
 - Bestandsnamen: lowercase, koppeltekens, .html extensie, GEEN subdirectories
