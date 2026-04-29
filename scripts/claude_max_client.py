@@ -165,14 +165,21 @@ def get_claude_client(api_key: str = ""):
 
     USE_CLAUDE_MAX=true  → ClaudeMaxClient (via bridge, gratis met Max)
     USE_CLAUDE_MAX=false → anthropic.Anthropic() (API-billing)
+
+    BELANGRIJK: bij USE_CLAUDE_MAX=true val NOOIT terug op de API — dit voorkomt
+    onverwachte API-kosten als de bridge tijdelijk onbereikbaar is. Faal hard
+    zodat je het probleem ziet en zelf kan kiezen om over te schakelen.
     """
     if os.getenv("USE_CLAUDE_MAX", "").lower() in ("true", "1", "yes"):
         client = ClaudeMaxClient()
         if client._check_bridge():
             print("[INFO] Claude Max-client actief (via bridge)")
             return client
-        else:
-            print("[WARN] Bridge niet bereikbaar — val terug op API-client")
+        raise RuntimeError(
+            f"USE_CLAUDE_MAX=true maar bridge niet bereikbaar op {BRIDGE_URL}. "
+            "Geen automatische fallback naar Anthropic API om onverwachte kosten te vermijden. "
+            "Start de bridge of zet USE_CLAUDE_MAX=false om bewust de API te gebruiken."
+        )
 
     from anthropic import Anthropic
     key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
