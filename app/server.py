@@ -557,6 +557,55 @@ def api_generate_page(slug):
     abort(404)
 
 
+@app.post("/api/prospects/<slug>/regenerate")
+def api_regenerate(slug):
+    """Draai de volledige pipeline opnieuw voor deze prospect (collect→deploy)."""
+    data      = request.get_json(silent=True) or {}
+    from_step = data.get("from_step", "generate")  # default: skip crawl, regenereer site
+    if from_step not in ("collect", "research", "brief", "generate", "validate"):
+        return jsonify({"ok": False, "error": f"ongeldige from_step: {from_step}"}), 400
+
+    prospects = load_prospects()
+    for i, p in enumerate(prospects):
+        if slugify(p.get("name", "")) != slug:
+            continue
+        if p.get("status") == "running":
+            return jsonify({"ok": False, "error": "Pipeline draait al"}), 409
+
+        company_name = p["name"]
+        prospects[i]["status"] = "running"
+        save_prospects(prospects)
+
+        def run_pipeline_bg(cn=company_name, fs=from_step):
+            def llog(msg):
+                with LOG_FILE.open("a", encoding="utf-8") as lf:
+                    lf.write(msg + "\n")
+            llog(f"\n{'─'*60}")
+            llog(f"[STAP] regenerate: {cn} (vanaf {fs})")
+            llog(f"{'─'*60}")
+            cmd = [
+                "python", str(SCRIPTS_DIR / "run_pipeline.py"),
+                "--name",      cn,
+                "--from-step", fs,
+                "--force",
+            ]
+            proc = subprocess.Popen(
+                cmd, cwd=str(SCRIPTS_DIR),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                env={**os.environ},
+            )
+            for line in proc.stdout:
+                llog(line.rstrip())
+            proc.wait()
+            llog(f"[OK]  regenerate klaar (exit {proc.returncode})" if proc.returncode == 0
+                 else f"[FAIL] regenerate mislukt (exit {proc.returncode})")
+
+        threading.Thread(target=run_pipeline_bg, daemon=True).start()
+        return jsonify({"ok": True, "from_step": from_step})
+
+    abort(404)
+
+
 @app.get("/api/prospects/<slug>/costs")
 def api_costs(slug):
     for p in load_prospects():

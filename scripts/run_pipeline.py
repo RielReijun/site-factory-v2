@@ -521,6 +521,32 @@ def _fix_nav_spacing(project_dir: Path) -> None:
             pass
 
 
+def _strip_em_dashes(project_dir: Path) -> None:
+    """
+    Vervang em-dashes (—) en en-dashes (–) in JSX-tekstinhoud door komma's.
+    Laat numerieke ranges (09:00-17:00), import-pijlen of code intact:
+    we vervangen alleen ' — ', '— ', ' —', ' – ', '– ', ' –'.
+    """
+    fixed = 0
+    for tsx in (project_dir / "src").rglob("*.tsx"):
+        try:
+            c = tsx.read_text(encoding="utf-8")
+            new = c
+            # Spaces rondom of aan een kant: vervang door comma + spatie
+            for ch in ("—", "–"):
+                new = new.replace(f" {ch} ", ", ")
+                new = new.replace(f"{ch} ",  ", ")
+                new = new.replace(f" {ch}",  ",")
+                new = new.replace(ch, ",")
+            if new != c:
+                tsx.write_text(new, encoding="utf-8")
+                fixed += 1
+        except Exception:
+            pass
+    if fixed:
+        log(f"[OK]  Em-dashes vervangen door komma's in {fixed} bestand(en)")
+
+
 def _fix_icon_as_text(project_dir: Path) -> None:
     """
     Vervang gevallen waar Claude een Lucide-icoonnaam als tekst heeft geschreven,
@@ -1598,7 +1624,7 @@ def main():
 
         n += len(page_units)
 
-        # Nog een keer Lucide icons fixen — pages worden na layout gegenereerd
+        # Nog een keer Lucide icons fixen, pages worden na layout gegenereerd
         _fix_lucide_icons(project_dir)
         _fix_page_function_names(project_dir)
         _fix_daisyui_colors(project_dir)
@@ -1606,6 +1632,7 @@ def main():
         _fix_nav_spacing(project_dir)
         _fix_client_components(project_dir)
         _fix_header_pathname(project_dir)
+        _strip_em_dashes(project_dir)
 
         # ── Fase 4: Next.js build ─────────────────────────────────────────────
         n += 1

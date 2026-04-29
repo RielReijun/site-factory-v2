@@ -184,10 +184,20 @@ Deze briefing wordt door een AI gebruikt om direct HTML/CSS/JS te genereren.
 
 Regels:
 - Maximaal 200 regels totaal
-- Maximaal 12 regels per sectie — gebruik bullets, geen alinea's
+- Maximaal 12 regels per sectie, gebruik bullets, geen alinea's
 - Geen herhaling, geen opvulling, geen inleidingen
-- Verzin GEEN feiten — markeer onzekerheden met AANNEMELIJK
+- Verzin GEEN feiten, markeer onzekerheden met AANNEMELIJK
 - Geen percentages, ROI-claims of statistieken tenzij aantoonbaar
+- **Geen em-dashes (—) of en-dashes (–) in de tekst**: gebruik komma's of punten
+
+## Behoud van originele identiteit
+De huidige site bevat herkenbare elementen die het bedrijf authentiek maken.
+Een nieuwe site verkoopt beter als die herkenbaarheid terugkomt. Pak hieruit:
+- Specifieke dienst/product-namen exact zoals die op de site staan
+- Signature-zinnen en USPs die het bedrijf zelf gebruikt (citeer uit Websitetekst)
+- Eigen vocabulaire (vakjargon, lokale uitdrukkingen, branding-termen)
+- Bestaande klantreviews/testimonials letterlijk (geen verzonnen versies)
+Voeg een sectie '## Behoud uit huidige site' toe met deze elementen als bullets.
 
 ## Input
 

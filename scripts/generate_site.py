@@ -117,10 +117,25 @@ Openingstijden zijn kritisch voor lokale bedrijven. Als de briefing ze noemt:
 - Alle interne links via Next.js `<Link href="...">` component
 - Navigatieroutes zijn UITSLUITEND:
 {nav_list}  Maak GEEN links naar routes die niet in deze lijst staan
-- Geen markdown in je output, geen uitleg — alleen bestanden
+- Geen markdown in je output, geen uitleg, alleen bestanden
 - Voeg `"use client"` toe aan elk component dat hooks of event handlers gebruikt
-- Afbeeldingen: gebruik gewone `<img>` tags (geen next/image — statische export)
-- FAQ: gebruik ALTIJD shadcn Accordion — nooit custom div/button implementaties
+- Afbeeldingen: gebruik gewone `<img>` tags (geen next/image, statische export)
+- FAQ: gebruik ALTIJD shadcn Accordion, nooit custom div/button implementaties
+
+## Typografie en interpunctie
+- **GEEN em-dashes (—) in tekst**: gebruik komma's of punten in plaats daarvan
+- Geen en-dashes (–) in tekst (wel ok in numerieke ranges zoals 09:00-17:00)
+- Gebruik gewone aanhalingstekens, geen typografische ("smart quotes")
+
+## Behoud herkenbare elementen van de originele site
+De gebruiker heeft de huidige website. Een vernieuwde versie verkoopt beter als
+herkenbare elementen terugkomen. Studeer de briefing op:
+- **Specifieke diensten/producten** met dezelfde namen die op de originele site staan
+- **USPs en kernboodschappen** die het bedrijf zelf uit (citaat-waardig in nieuwe vorm)
+- **Eigen vocabulaire** (vakjargon, signature-termen, lokale uitdrukkingen)
+- **Afbeeldingen die kenmerkend zijn** voor het bedrijf, gebruik die prominent
+- **Klantreviews/testimonials** uit de briefing letterlijk overnemen (geen verzonnen versies)
+Het doel: de gebruiker herkent zijn eigen bedrijf direct, maar in een professionelere jas.
 
 ## Technische eisen
 - TypeScript met eenvoudige types (geen complexe generics)

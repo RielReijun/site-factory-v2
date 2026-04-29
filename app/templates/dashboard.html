@@ -1545,6 +1545,34 @@ function copyMail(btn) {
   });
 }
 
+async function triggerRegenerate(slug, btn) {
+  const ok = confirm('Pipeline opnieuw draaien voor deze prospect? Dit overschrijft de huidige site.');
+  if (!ok) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⟳ Bezig…';
+  try {
+    const res = await fetch(`/api/prospects/${slug}/regenerate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({from_step: 'generate'}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      alert('Regenereren mislukt: ' + (data.error || res.statusText));
+      btn.disabled = false;
+      btn.textContent = orig;
+      return;
+    }
+    btn.textContent = '⟳ Pipeline draait…';
+    setTimeout(() => loadProspects(), 1500);
+  } catch (e) {
+    alert('Regenereren mislukt: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
 async function triggerDeploy(slug, btn) {
   btn.disabled = true;
   btn.textContent = '⟳ Deployen...';
@@ -1986,6 +2014,9 @@ function render(prospects) {
         ? `<button class="btn-sm" disabled>⟳ Deployen...</button>`
         : `<button class="btn-sm deploy-btn" id="deploy-btn-${p.slug}" onclick="event.stopPropagation();triggerDeploy('${p.slug}',this)">▶ Deploy</button>`
       : '';
+    const regenBtn    = p.collected_path && p.status !== 'running'
+      ? `<button class="btn-sm" title="Pipeline opnieuw draaien (vanaf generate)" onclick="event.stopPropagation();triggerRegenerate('${p.slug}',this)">↻ Regenereer</button>`
+      : '';
     const deleteBtn   = `<button class="btn-sm" title="Verwijderen" onclick="event.stopPropagation();startDelete('${p.slug}')">🗑</button>`;
 
     // Meta bar
@@ -2017,7 +2048,7 @@ function render(prospects) {
         </div>
         ${metaBar}
         <div class="card-actions" onclick="event.stopPropagation()">
-          ${cfBtn}${previewBtn}${deployBtn}${externalBtn}${deleteBtn}
+          ${cfBtn}${previewBtn}${deployBtn}${regenBtn}${externalBtn}${deleteBtn}
         </div>
         <div class="card-pipeline" onclick="event.stopPropagation()">
           <div class="pipeline-inline">
