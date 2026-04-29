@@ -64,16 +64,23 @@ def claude_api():
     # Combineer system + user prompt voor claude --print
     full_prompt = f"{system}\n\n{prompt}" if system else prompt
 
+    # ANTHROPIC_API_KEY uit env strippen voor claude subprocess: anders pakt
+    # de CLI die voor billing i.p.v. de Claude Max OAuth-sessie ('apiKeySource'
+    # = ANTHROPIC_API_KEY → API charges). Met lege key valt hij terug op OAuth.
+    claude_env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+
     try:
         result = subprocess.run(
             [CLAUDE_BIN, "--print", "--output-format", "text", full_prompt],
-            cwd="/tmp",  # neutrale dir — geen CLAUDE.md/project-context die tool-use triggert
+            cwd="/tmp",  # neutrale dir, geen CLAUDE.md/project-context die tool-use triggert
             capture_output=True, text=True, timeout=600,
+            env=claude_env,
         )
         if result.returncode == 0:
             return json.dumps({"content": result.stdout.strip(), "error": None}), 200, {"Content-Type": "application/json"}
         else:
-            return json.dumps({"content": "", "error": result.stderr.strip() or "Claude fout"}), 500, {"Content-Type": "application/json"}
+            err_msg = (result.stderr.strip() or result.stdout.strip() or "Claude fout")
+            return json.dumps({"content": "", "error": err_msg}), 500, {"Content-Type": "application/json"}
     except subprocess.TimeoutExpired:
         return json.dumps({"content": "", "error": "Timeout na 600s"}), 504, {"Content-Type": "application/json"}
     except Exception as e:
