@@ -48,9 +48,11 @@ def normalize_phone(phone: str) -> str:
 
 def check_company_name(html_text: str, company_name: str) -> list[str]:
     warnings = []
+    # Strip test/version-suffixen die niet in de gerenderde site horen voor te komen
+    cleaned = re.sub(r"\s+[Vv]\d+\s*$", "", company_name.strip())
     # Gebruik de eerste twee woorden voor een soepelere match
-    words = company_name.strip().split()
-    search = " ".join(words[:2]) if len(words) >= 2 else company_name
+    words = cleaned.strip().split()
+    search = " ".join(words[:2]) if len(words) >= 2 else cleaned
     if search.lower() not in html_text.lower():
         warnings.append(f"Bedrijfsnaam '{search}' niet gevonden in de gegenereerde site")
     return warnings

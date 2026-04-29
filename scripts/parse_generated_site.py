@@ -104,19 +104,30 @@ def parse_blocks(raw: str) -> list[dict]:
 
 
 def _strip_code_fence(content: str) -> str:
-    """Strip een optionele ```...``` wrapper die de AI soms toevoegt."""
+    """
+    Strip alle ```...``` wrappers die de AI soms toevoegt, ook als ze:
+    - midden in het bestand staan (na een prelude-regel zoals "use client";)
+    - meerdere keren voorkomen (taalblokken)
+    - alleen aan begin of einde staan
+    """
     lines = content.splitlines()
-    # Verwijder leading lege regels
+    # Verwijder lege regels aan begin/einde
     while lines and not lines[0].strip():
         lines.pop(0)
-    # Verwijder trailing lege regels
     while lines and not lines[-1].strip():
         lines.pop()
     if not lines:
         return content
-    if lines[0].strip().startswith("```"):
-        lines.pop(0)
-    if lines and lines[-1].strip().startswith("```"):
+    # Verwijder ALLE fence-regels in de eerste 10 regels (Claude zet ze soms
+    # na 'use client' of een comment, niet alleen aan het begin).
+    new_lines: list[str] = []
+    for i, line in enumerate(lines):
+        if i < 10 and line.strip().startswith("```"):
+            continue
+        new_lines.append(line)
+    lines = new_lines
+    # Verwijder ALLE trailing fence-regels
+    while lines and lines[-1].strip().startswith("```"):
         lines.pop()
     return "\n".join(lines)
 
