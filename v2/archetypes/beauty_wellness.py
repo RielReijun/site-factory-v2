@@ -716,13 +716,32 @@ def _decorate_pages(
     treatments: list[dict[str, Any]],
     products: dict[str, Any],
     home_section_order: list[str] | None = None,
+    pages_content: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Maak subpagina's inhoudelijk verschillend zonder runtime codegeneratie."""
+    """Maak subpagina's inhoudelijk verschillend zonder runtime codegeneratie.
+
+    Wanneer pages_content (uit inventory) een match heeft op de page-slug,
+    wint die als bron voor lead/body/bullets — zo krijgen prospects hun eigen
+    verbatim woorden op de subpagina i.p.v. de hardcoded fallback-copy.
+    """
     service_titles = [service.get("title", "Behandeling") for service in services]
     first_services = service_titles[:4] or ["persoonlijke behandeling"]
     home_sections = home_section_order or [
         "services", "about", "gallery", "reviews", "openingHours", "contactCta"
     ]
+    pcs = pages_content or {}
+
+    def _from_pages_content(slug: str) -> tuple[str, str, list[str]]:
+        """Helper: pak verbatim lead/body/bullets uit inventory wanneer er een
+        page-content match is voor deze slug. Geeft ('', '', []) terug als
+        geen match — dan vallen we terug op hardcoded copy."""
+        pc = pcs.get(slug)
+        if not pc:
+            return "", "", []
+        lead = pc.lead if hasattr(pc, "lead") else (pc.get("lead") if isinstance(pc, dict) else "")
+        body = pc.body if hasattr(pc, "body") else (pc.get("body") if isinstance(pc, dict) else "")
+        bullets = pc.bullets if hasattr(pc, "bullets") else (pc.get("bullets") if isinstance(pc, dict) else [])
+        return lead or "", body or "", list(bullets or [])
 
     for page in pages:
         slug = page.get("slug", "")
@@ -732,31 +751,33 @@ def _decorate_pages(
 
         title = page.get("title") or slug.replace("-", " ").title()
         lower = f"{slug} {title}".lower()
+        verbatim_lead, verbatim_body, verbatim_bullets = _from_pages_content(slug)
 
         if any(word in lower for word in ("behandeling", "diensten", "service")):
             page["sections"] = ["pageContent", "treatments", "services", "gallery", "contactCta"]
             page["content"] = {
                 "eyebrow": "Behandelingen",
                 "title": title,
-                "lead": page.get("description") or "Kies de behandeling die past bij jouw huid, wensen en moment.",
-                "body": "Deze pagina gebruikt de behandelteksten uit de originele website, inclusief duur, vaste onderdelen en bekende tarieven.",
-                "bullets": [f"{name} met aandacht voor jouw wensen" for name in first_services],
+                "lead": verbatim_lead or page.get("description") or "Kies de behandeling die past bij jouw huid, wensen en moment.",
+                "body": verbatim_body or "Deze pagina gebruikt de behandelteksten uit de originele website, inclusief duur, vaste onderdelen en bekende tarieven.",
+                "bullets": verbatim_bullets or [f"{name} met aandacht voor jouw wensen" for name in first_services],
                 "note": "Twijfel je welke behandeling past? Bel of WhatsApp, dan denken we even met je mee.",
             }
         elif any(word in lower for word in ("tarief", "tarieven", "prijs", "prijzen", "prijslijst")):
             page["sections"] = ["pageContent", "prices", "contactCta"]
             n_items = sum(len(group.get("items", [])) for group in price_groups)
             n_categories = len(price_groups)
+            default_bullets = [
+                f"Verdeeld over {n_categories} categorieën" if n_categories > 1 else f"{n_items} behandelingen op één plek",
+                "Vaste prijs per behandeling, geen verborgen kosten",
+                "Combineer losse behandelingen met een gezichtsbehandeling voor korting",
+            ]
             page["content"] = {
                 "eyebrow": "Tarieven",
                 "title": title,
-                "lead": page.get("description") or "Heldere prijzen, geen verrassingen.",
-                "body": "Hieronder vind je per categorie de actuele tarieven. Vraag bij twijfel altijd vooraf naar wat de behandeling voor jou kost — we plannen genoeg tijd in en denken graag mee.",
-                "bullets": [
-                    f"Verdeeld over {n_categories} categorieën" if n_categories > 1 else f"{n_items} behandelingen op één plek",
-                    "Vaste prijs per behandeling, geen verborgen kosten",
-                    "Combineer losse behandelingen met een gezichtsbehandeling voor korting",
-                ],
+                "lead": verbatim_lead or page.get("description") or "Heldere prijzen, geen verrassingen.",
+                "body": verbatim_body or "Hieronder vind je per categorie de actuele tarieven. Vraag bij twijfel altijd vooraf naar wat de behandeling voor jou kost, we plannen genoeg tijd in en denken graag mee.",
+                "bullets": verbatim_bullets or default_bullets,
                 "note": "",
             }
         elif any(word in lower for word in ("product", "merk", "shop")):
@@ -764,9 +785,9 @@ def _decorate_pages(
             page["content"] = {
                 "eyebrow": "Producten",
                 "title": title,
-                "lead": page.get("description") or products.get("lead") or "Productadvies dat past bij jouw huid en routine.",
-                "body": products.get("body") or "Deze pagina gebruikt alleen productnamen en productclaims die in de crawl of briefing gevonden zijn.",
-                "bullets": products.get("bullets") or ["Advies op basis van jouw huid en wensen"],
+                "lead": verbatim_lead or page.get("description") or products.get("lead") or "Productadvies dat past bij jouw huid en routine.",
+                "body": verbatim_body or products.get("body") or "Deze pagina gebruikt alleen productnamen en productclaims die in de crawl of briefing gevonden zijn.",
+                "bullets": verbatim_bullets or products.get("bullets") or ["Advies op basis van jouw huid en wensen"],
                 "note": "Productclaims blijven bewust beperkt tot wat in de originele bron is gevonden.",
             }
         elif any(word in lower for word in ("over", "mij", "ons", "salon")):
@@ -774,9 +795,9 @@ def _decorate_pages(
             page["content"] = {
                 "eyebrow": "Persoonlijk",
                 "title": title,
-                "lead": page.get("description") or f"Maak kennis met {company_name}.",
-                "body": "Een beauty/wellness-site verkoopt vertrouwen. Deze pagina geeft ruimte aan het verhaal van de behandelaar, de sfeer in de salon en de manier van werken.",
-                "bullets": [
+                "lead": verbatim_lead or page.get("description") or f"Maak kennis met {company_name}.",
+                "body": verbatim_body or "Een beauty/wellness-site verkoopt vertrouwen. Deze pagina geeft ruimte aan het verhaal van de behandelaar, de sfeer in de salon en de manier van werken.",
+                "bullets": verbatim_bullets or [
                     "Persoonlijke aandacht in een rustige setting",
                     "Een herkenbaar verhaal in de woorden van de salon",
                     "Geen verzonnen reviews of claims",
@@ -790,9 +811,9 @@ def _decorate_pages(
             page["content"] = {
                 "eyebrow": "Contact",
                 "title": title,
-                "lead": page.get("description") or "Plan je afspraak of stel je vraag direct.",
-                "body": "Gebruik deze pagina voor de praktische contactgegevens, afspraakroute en bereikbaarheid.",
-                "bullets": [
+                "lead": verbatim_lead or page.get("description") or "Plan je afspraak of stel je vraag direct.",
+                "body": verbatim_body or "Gebruik deze pagina voor de praktische contactgegevens, afspraakroute en bereikbaarheid.",
+                "bullets": verbatim_bullets or [
                     f"Adres: {address}",
                     f"Telefoon: {phone}",
                     "WhatsApp is beschikbaar als er een mobiel nummer is gevonden",
@@ -804,9 +825,9 @@ def _decorate_pages(
             page["content"] = {
                 "eyebrow": "Informatie",
                 "title": title,
-                "lead": page.get("description") or f"Meer over {title.lower()}.",
-                "body": "Deze pagina gebruikt eigen content uit de briefing zodra die beschikbaar is. Tot die tijd blijft de tekst bewust compact en eerlijk.",
-                "bullets": [
+                "lead": verbatim_lead or page.get("description") or f"Meer over {title.lower()}.",
+                "body": verbatim_body or "Deze pagina gebruikt eigen content uit de briefing zodra die beschikbaar is. Tot die tijd blijft de tekst bewust compact en eerlijk.",
+                "bullets": verbatim_bullets or [
                     "Heldere informatie zonder verzonnen claims",
                     "Aansluitend op de bestaande briefing",
                     "Met een directe route naar contact",
@@ -1100,6 +1121,7 @@ class BeautyWellnessArchetype:
             treatments,
             products,
             home_section_order=home_section_order,
+            pages_content=inventory.pages_content,
         )
 
         plan: dict[str, Any] = {

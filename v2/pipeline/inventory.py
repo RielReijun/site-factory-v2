@@ -93,6 +93,21 @@ class PageInfo:
 
 
 @dataclass
+class PageContent:
+    """Verbatim body-content voor één pagina, geextraheerd uit text.txt.
+
+    Vervangt de generieke 'over deze pagina'-copy in render door de echte
+    woorden van het bedrijf zelf.
+    """
+    slug: str
+    lead: str            # eerste body-paragraaf
+    body: str            # volgende 1-2 paragrafen, samengevoegd
+    bullets: list[str]   # eventuele bullet-points (zoals "- onze waarden")
+    paragraph_count: int # hoeveel kandidaat-paragrafen er waren
+    source: Provenance
+
+
+@dataclass
 class ImageInfo:
     path: str            # relative to collected/
     role_hint: str       # "logo", "hero", "portrait", "gallery", "service", "unknown"
@@ -114,6 +129,7 @@ class ContentInventory:
     warnings: list[str]
     visual_dna: VisualDNA = field(default_factory=VisualDNA)
     signatures: list[Signature] = field(default_factory=list)
+    pages_content: dict[str, PageContent] = field(default_factory=dict)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -477,6 +493,84 @@ def _extract_signatures(text: str, source_name: str) -> list[Signature]:
     return found[:8]
 
 
+# ── Per-pagina content extractie ─────────────────────────────────────────────
+def _normalize_page_slug(name: str) -> str:
+    """Normaliseer pagina-namen tot vergelijkbare slugs.
+
+    text.txt's `=== Pagina: /over-mij/ ===` en pages.json's 'over-mij.html'
+    moeten op dezelfde key matchen.
+    """
+    s = name.strip().lower()
+    s = s.lstrip("/").rstrip("/")
+    s = re.sub(r"\.html?$", "", s)
+    return s
+
+
+def _extract_pages_content(text: str, source_name: str) -> dict[str, PageContent]:
+    """Voor elke pagina (uit text.txt page markers), extract de eerste
+    body-paragrafen en bullet-points. Filtert nav-ruis en privacy-pagina's
+    weg zodat de render alleen 'echte' content krijgt."""
+    out: dict[str, PageContent] = {}
+    for raw_name, content in _split_pages(text):
+        slug = _normalize_page_slug(raw_name)
+        if _SIG_SKIP_PAGES.search(slug):
+            continue
+        if not slug:
+            slug = ""  # home
+
+        # text.txt heeft typisch één paragraaf per regel (geen blank lines
+        # ertussen). Single-line split is dus de juiste granulariteit.
+        paragraphs: list[str] = []
+        for para in content.splitlines():
+            collapsed = re.sub(r"\s+", " ", para).strip()
+            if not collapsed:
+                continue
+            # Skip te korte regels (meestal nav, breadcrumb, headers, of korte
+            # instructie-zinnen die geen volle paragraaf zijn).
+            if len(collapsed) < 80:
+                continue
+            # Skip footer/legal-noise + emails/URLs/postcodes
+            if any(p.search(collapsed) for p in _SIG_REJECT_PATTERNS):
+                continue
+            # Skip prijsregels — die horen in inventory.prices, niet in body
+            if re.search(r"€\s?\d", collapsed):
+                continue
+            # Skip pure all-caps zinnen (vaak nav-headers)
+            alpha = [c for c in collapsed if c.isalpha()]
+            if alpha and sum(c.isupper() for c in alpha) / len(alpha) > 0.5:
+                continue
+            paragraphs.append(collapsed)
+
+        if not paragraphs:
+            continue
+
+        lead = paragraphs[0][:320]
+        body_pieces = paragraphs[1:3]
+        body = " ".join(body_pieces)[:500]
+
+        # Bullets: zoek "- ", "* ", "• " prefixed regels in raw content
+        bullets: list[str] = []
+        for line in content.splitlines():
+            line = line.strip()
+            if not line.startswith(("- ", "* ", "• ", "·")):
+                continue
+            clean = line.lstrip("-*•· ").strip()
+            if 8 <= len(clean) <= 90:
+                bullets.append(clean)
+            if len(bullets) >= 5:
+                break
+
+        out[slug] = PageContent(
+            slug=slug,
+            lead=lead,
+            body=body,
+            bullets=bullets[:4],
+            paragraph_count=len(paragraphs),
+            source=Provenance(source=f"{source_name}:page={slug or 'home'}", confidence="high"),
+        )
+    return out
+
+
 # ── Reviews / testimonials ───────────────────────────────────────────────────
 _BLOCKQUOTE_RE = re.compile(r"<blockquote[^>]*>(.*?)</blockquote>", re.DOTALL | re.IGNORECASE)
 _REVIEW_CLASS_RE = re.compile(
@@ -720,6 +814,13 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
             "op briefing-extractie"
         )
 
+    pages_content = _extract_pages_content(text, "text.txt")
+    if not pages_content:
+        warnings.append(
+            "Geen per-pagina body-content geextraheerd — text.txt mist Pagina-markers "
+            "of body-paragrafen"
+        )
+
     return ContentInventory(
         slug=slug,
         company_name=company_name,
@@ -735,4 +836,5 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
         warnings=warnings,
         visual_dna=visual_dna,
         signatures=signatures,
+        pages_content=pages_content,
     )
