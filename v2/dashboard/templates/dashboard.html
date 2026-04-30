@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>v2 Dashboard — Site Factory</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --surface: #161a22;
+      --surface-2: #1d222c;
+      --border: #2a303d;
+      --text: #e3e6ec;
+      --muted: #8d95a6;
+      --accent: #5ec8a6;
+      --warn: #f0a056;
+      --fail: #ec6464;
+      --ok: #5ec8a6;
+      --info: #5e9bf3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    a { color: var(--info); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); padding: 2px 6px; border-radius: 4px; }
+    .container { max-width: 1320px; margin: 0 auto; padding: 28px 22px 60px; }
+
+    /* Header */
+    .header { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 8px; }
+    h1 { margin: 0; font-size: 26px; font-weight: 600; }
+    .subtitle { color: var(--muted); font-size: 14px; }
+    .stats { display: flex; gap: 22px; margin: 16px 0 30px; flex-wrap: wrap; }
+    .stat { background: var(--surface); border: 1px solid var(--border); padding: 10px 16px; border-radius: 8px; }
+    .stat-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    .stat-value { font-size: 22px; font-weight: 600; }
+    .stat-value.ok { color: var(--ok); }
+    .stat-value.fail { color: var(--fail); }
+
+    /* Filters */
+    .filters { display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; align-items: center; }
+    .filter-group { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px; display: inline-flex; }
+    .filter-btn {
+      background: transparent; color: var(--muted); border: 0;
+      padding: 6px 12px; font-size: 13px; cursor: pointer;
+      border-radius: 4px; font-family: inherit;
+    }
+    .filter-btn.active { background: var(--surface-2); color: var(--text); }
+    .search-input {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 12px; border-radius: 6px;
+      font-size: 13px; font-family: inherit; min-width: 220px;
+    }
+
+    /* Cards */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.15s ease;
+    }
+    .card:hover { border-color: #3a4252; }
+    .card-color-strip {
+      height: 6px;
+      background: linear-gradient(90deg, var(--card-primary, #444), var(--card-accent, #888));
+    }
+    .card-body { padding: 16px 18px 14px; flex: 1; }
+    .card-title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+    .card-title h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .badge {
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .badge.beauty   { background: #392b32; color: #f3a4a2; border-color: #4d2a30; }
+    .badge.local    { background: #233a30; color: #5ec8a6; border-color: #2a4a3a; }
+    .badge.gate-ok  { background: #1f3127; color: var(--ok); border-color: #28432f; }
+    .badge.gate-fail { background: #3a221f; color: var(--fail); border-color: #4a2725; }
+    .badge.gate-warn { background: #3a2e1f; color: var(--warn); border-color: #4a3a25; }
+
+    .card-meta { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .signature {
+      font-size: 13px;
+      color: #c4cad5;
+      line-height: 1.5;
+      margin: 0 0 12px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .swatches { display: inline-flex; gap: 4px; margin-left: 6px; }
+    .swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.08); }
+
+    .gate-line {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .gate-line strong { color: var(--text); font-weight: 600; }
+    .fail-reasons {
+      font-size: 12px;
+      color: var(--fail);
+      background: #3a221f;
+      border-radius: 4px;
+      padding: 6px 9px;
+      margin: 6px 0 4px;
+    }
+    .fail-reasons li { margin: 0; padding: 0; list-style: none; }
+
+    .card-actions {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: rgba(0,0,0,0.18);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 7px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s ease;
+    }
+    .btn:hover { background: #2a313d; text-decoration: none; }
+    .btn.primary { background: #2c4d68; border-color: #3a6489; color: #cfdcec; }
+    .btn.primary:hover { background: #355a78; }
+    .btn.success { background: #234436; border-color: #2e5a47; color: #b8dfc8; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .build-status {
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: auto;
+    }
+    .build-status.building { color: var(--info); }
+    .build-status.done { color: var(--ok); }
+    .build-status.failed { color: var(--fail); }
+
+    .archetype-badge { background: var(--surface-2); border: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>v2 Dashboard</h1>
+        <div class="subtitle">{{ counts.total }} prospects · index: {{ generated_at[:19] if generated_at else "(geen)" }}</div>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Ready</div>
+          <div class="stat-value ok">{{ counts.ready }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Gate failed</div>
+          <div class="stat-value fail">{{ counts.gate_failed }}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">With dist</div>
+          <div class="stat-value">{{ counts.with_dist }}</div>
+        </div>
+        {% for arch, n in counts.by_archetype.items() %}
+        <div class="stat">
+          <div class="stat-label">{{ arch }}</div>
+          <div class="stat-value">{{ n }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="all">Alle</button>
+        <button class="filter-btn" data-filter="ready">Ready</button>
+        <button class="filter-btn" data-filter="failed">Gate failed</button>
+        <button class="filter-btn" data-filter="with-dist">Met dist</button>
+      </div>
+      <div class="filter-group">
+        <button class="filter-btn active" data-archetype="all">Alle archetypes</button>
+        <button class="filter-btn" data-archetype="beauty_wellness">Beauty/Wellness</button>
+        <button class="filter-btn" data-archetype="local_service">Local Service</button>
+      </div>
+      <input type="text" class="search-input" id="search" placeholder="Zoek op naam of slug..." />
+    </div>
+
+    <div class="grid" id="grid">
+      {% for p in prospects %}
+      {% set gate = p.gate %}
+      {% set ok = gate.ok and p.render_status == "rendered" %}
+      <article class="card"
+               data-slug="{{ p.slug }}"
+               data-archetype="{{ p.archetype }}"
+               data-state="{{ 'ready' if ok else ('failed' if not gate.ok else 'rendered') }}"
+               data-has-dist="{{ '1' if p.has_dist else '0' }}"
+               data-name="{{ (p.company_name or '')|lower }} {{ p.slug|lower }}"
+               style="--card-primary: {{ p.theme.primary or '#444' }}; --card-accent: {{ p.theme.accent or '#888' }};">
+        <div class="card-color-strip"></div>
+        <div class="card-body">
+          <div class="card-title">
+            <h3>{{ p.company_name or p.slug }}</h3>
+            {% if p.archetype == "beauty_wellness" %}
+              <span class="badge beauty">beauty</span>
+            {% elif p.archetype == "local_service" %}
+              <span class="badge local">B2B</span>
+            {% else %}
+              <span class="badge">{{ p.archetype }}</span>
+            {% endif %}
+          </div>
+          <div class="card-meta">
+            <code>{{ p.slug }}</code>
+            <span class="swatches">
+              {% if p.theme.primary %}<span class="swatch" style="background: {{ p.theme.primary }}" title="primary {{ p.theme.primary }}"></span>{% endif %}
+              {% if p.theme.accent %}<span class="swatch" style="background: {{ p.theme.accent }}" title="accent {{ p.theme.accent }}"></span>{% endif %}
+              {% if p.theme.background %}<span class="swatch" style="background: {{ p.theme.background }}; border-color: var(--border)" title="bg {{ p.theme.background }}"></span>{% endif %}
+            </span>
+          </div>
+          {% if p.signature %}
+            <p class="signature">{{ p.signature }}</p>
+          {% endif %}
+          <div class="gate-line">
+            {% if ok %}
+              <span class="badge gate-ok">{{ gate.passes }}/{{ gate.passes }} pass</span>
+            {% else %}
+              <span class="badge gate-fail">{{ gate.fails }} fail · {{ gate.passes }} pass</span>
+            {% endif %}
+            {% if gate.warns > 0 %}
+              <span class="badge gate-warn">{{ gate.warns }} warn</span>
+            {% endif %}
+            <span><strong>{{ p.duration_ms }}</strong>ms</span>
+          </div>
+          {% if gate.fail_reasons %}
+            <ul class="fail-reasons">
+              {% for r in gate.fail_reasons[:3] %}<li>· {{ r }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+        <div class="card-actions">
+          {% if p.has_dist %}
+            <a class="btn primary" href="/sites/{{ p.slug }}/" target="_blank">Bekijk site →</a>
+            <button class="btn build-btn" data-slug="{{ p.slug }}">Herbouw</button>
+          {% else %}
+            <button class="btn primary build-btn" data-slug="{{ p.slug }}">Bouw site</button>
+            {% if p.source_url %}<a class="btn" href="{{ p.source_url }}" target="_blank">Origineel</a>{% endif %}
+          {% endif %}
+          <span class="build-status" data-slug="{{ p.slug }}-status"></span>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+
+  <script>
+    // Filter-logica
+    const cards = document.querySelectorAll(".card");
+    let stateFilter = "all";
+    let archetypeFilter = "all";
+    let searchQuery = "";
+
+    function applyFilters() {
+      cards.forEach((card) => {
+        const state = card.dataset.state;
+        const arch = card.dataset.archetype;
+        const hasDist = card.dataset.hasDist === "1";
+        const name = card.dataset.name || "";
+        let visible = true;
+        if (stateFilter === "ready" && state !== "ready") visible = false;
+        if (stateFilter === "failed" && state !== "failed") visible = false;
+        if (stateFilter === "with-dist" && !hasDist) visible = false;
+        if (archetypeFilter !== "all" && arch !== archetypeFilter) visible = false;
+        if (searchQuery && !name.includes(searchQuery)) visible = false;
+        card.style.display = visible ? "" : "none";
+      });
+    }
+
+    document.querySelectorAll("[data-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-filter]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        stateFilter = btn.dataset.filter;
+        applyFilters();
+      });
+    });
+    document.querySelectorAll("[data-archetype]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-archetype]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        archetypeFilter = btn.dataset.archetype;
+        applyFilters();
+      });
+    });
+    document.getElementById("search").addEventListener("input", (e) => {
+      searchQuery = e.target.value.trim().toLowerCase();
+      applyFilters();
+    });
+
+    // Build-on-demand
+    function setStatus(slug, label, cls) {
+      const el = document.querySelector(`[data-slug="${slug}-status"]`);
+      if (el) {
+        el.textContent = label;
+        el.className = "build-status " + cls;
+      }
+    }
+    async function pollStatus(slug, button) {
+      let tries = 0;
+      while (tries < 240) {
+        await new Promise((r) => setTimeout(r, 1500));
+        tries++;
+        try {
+          const resp = await fetch(`/api/build-status/${slug}`);
+          const data = await resp.json();
+          if (data.status === "building") {
+            setStatus(slug, `bouwen... (${tries * 1.5 | 0}s)`, "building");
+          } else if (data.status === "done") {
+            setStatus(slug, "klaar — herlaad", "done");
+            button.disabled = false;
+            // Reload na korte pauze zodat dist-link verschijnt
+            setTimeout(() => window.location.reload(), 1200);
+            return;
+          } else if (data.status === "failed") {
+            setStatus(slug, "build mislukt", "failed");
+            button.disabled = false;
+            return;
+          }
+        } catch (e) {
+          setStatus(slug, "fout: " + e.message, "failed");
+          button.disabled = false;
+          return;
+        }
+      }
+      setStatus(slug, "timeout", "failed");
+      button.disabled = false;
+    }
+    document.querySelectorAll(".build-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const slug = btn.dataset.slug;
+        btn.disabled = true;
+        setStatus(slug, "starten...", "building");
+        try {
+          const resp = await fetch(`/api/build/${slug}`, { method: "POST" });
+          const data = await resp.json();
+          if (data.ok) {
+            pollStatus(slug, btn);
+          } else {
+            setStatus(slug, data.error || "fout", "failed");
+            btn.disabled = false;
+          }
+        } catch (e) {
+          setStatus(slug, "netwerkfout", "failed");
+          btn.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html>

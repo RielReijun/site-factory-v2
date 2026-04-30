@@ -15,6 +15,7 @@ contract.
 | Naam              | Match-keywords                                                    | Status |
 | ----------------- | ----------------------------------------------------------------- | ------ |
 | `beauty_wellness` | beautysalon, kapsalon, schoonheidsspecialist, wellness, spa, etc. | klaar  |
+| `local_service`   | stucadoor, schilder, bouwbedrijf, hovenier, loodgieter, etc.      | klaar  |
 | `generic`         | fallback wanneer geen archetype matcht                            | klaar  |
 
 Een archetype levert:
@@ -57,6 +58,46 @@ python3 v2/scripts/build_from_existing_brief.py --slug ... --force --ignore-qual
 # 4. Visual lint op de gebouwde dist (impeccable, non-blocking)
 python3 v2/scripts/lint_visual.py --slug www-beautysaloncarlijn-nl
 ```
+
+## Batch-mode + dashboard
+
+Voor het draaien op meerdere prospects tegelijk en het bekijken van de
+resultaten:
+
+```bash
+# Inventory + gate + render voor alle prospects in data/
+docker run --rm \
+  -v $(pwd):/workspace \
+  -w /workspace \
+  site-factory-worker \
+  bash -lc 'pip install -q -r /workspace/v2/requirements.txt && \
+            python3 /workspace/v2/scripts/batch_build.py --all --ignore-gate'
+# → schrijft artifacts/v2/_index.json met status per prospect
+```
+
+Dashboard met overzicht en preview-iframes:
+
+```bash
+docker run --rm \
+  -v $(pwd):/workspace \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -w /workspace \
+  -p 8281:8281 \
+  --name v2-dashboard \
+  site-factory-worker \
+  bash -lc 'pip install -q -r /workspace/v2/requirements.txt && \
+            python3 /workspace/v2/dashboard/server.py'
+```
+
+Open `http://localhost:8281`. Toont alle prospects als kaarten met:
+- archetype-badge en kleurpalet uit Visual DNA
+- gate status (passes/warns/fails) en fail-redenen
+- signature-zin per prospect
+- "Bouw site" knop die `npx astro build` triggert via docker
+- "Bekijk site" link (na build) die `dist/` live serveert via `/sites/<slug>/`
+
+De Docker-socket-mount is nodig zodat het dashboard `docker run` kan
+gebruiken voor on-demand builds.
 
 Detectie is automatisch (`--archetype auto` is default). Forceer een specifieke
 keuze met `--archetype beauty_wellness` of skip met `--archetype generic`.
