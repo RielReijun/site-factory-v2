@@ -52,11 +52,16 @@ def _has_built_dist(slug: str) -> bool:
     return (ARTIFACTS_DIR / slug / "astro-source" / "dist" / "index.html").exists()
 
 
+def _has_reference(slug: str) -> bool:
+    return (ARTIFACTS_DIR / slug / "_reference.png").exists()
+
+
 def _enrich_prospect(p: dict) -> dict:
     """Vul runtime-info aan: of dist/ aanwezig is, of een build draait."""
     slug = p["slug"]
-    p["has_dist"]     = _has_built_dist(slug)
-    p["build_status"] = _BUILD_STATUS.get(slug, {}).get("status", "idle")
+    p["has_dist"]      = _has_built_dist(slug)
+    p["has_reference"] = _has_reference(slug)
+    p["build_status"]  = _BUILD_STATUS.get(slug, {}).get("status", "idle")
     return p
 
 
@@ -197,6 +202,15 @@ def serve_screenshot(slug: str, filename: str):
     if not screenshot_dir.exists():
         abort(404)
     return send_from_directory(screenshot_dir, filename)
+
+
+@app.get("/reference/<slug>")
+def serve_reference(slug: str):
+    """Originele website-screenshot (voor side-by-side vergelijk)."""
+    target = ARTIFACTS_DIR / slug / "_reference.png"
+    if not target.exists():
+        abort(404)
+    return send_from_directory(ARTIFACTS_DIR / slug, "_reference.png")
 
 
 # ── Root-relative routing via Referer ────────────────────────────────────────
