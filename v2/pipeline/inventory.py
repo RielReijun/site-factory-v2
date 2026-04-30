@@ -159,12 +159,31 @@ def _format_phone(phone: str) -> str:
 
 
 # ── Prices + treatments uit text.txt ─────────────────────────────────────────
+# Matcht "<label> <amount>" op één regel:
+#   "Mini facial treatment (30 min)   €36,50"
+#   "Knippen, föhnen halflang haar:     € 37,50"
+#   "Gellak French                      € 30,-"
 _PRICE_LINE_RE = re.compile(
     r"""^(?P<label>.+?)\s+
-        (?P<amount>€\s?\d{1,4}(?:[,.]\d{2})?)\s*$
+        (?:vanaf\s+)?
+        (?P<amount>€\s?\d{1,4}(?:[,.]\d{2}|,-)?)\s*
+        (?:\s*\(vanaf\))?\s*$
     """,
     re.VERBOSE,
 )
+
+# Matcht een standalone price-regel (label staat op de regel ervoor):
+#   "€19,50"
+#   "€ 25,- (vanaf)"
+#   "vanaf € 55,-"
+_PRICE_ONLY_RE = re.compile(
+    r"""^\s*(?:vanaf\s+)?
+        (?P<amount>€\s?\d{1,4}(?:[,.]\d{2}|,-)?)
+        \s*(?:\(vanaf\))?\s*$
+    """,
+    re.VERBOSE,
+)
+
 _DURATION_RE = re.compile(r"\((?P<min>\d{1,3})\s*min(?:uten)?\)|(?P<min2>\d{1,3})\s*min\b", re.IGNORECASE)
 # Categorieheaders die in Carlijn's text.txt voorkomen — herkenbaar aan korte regel
 # zonder € en zonder zin-leestekens.
@@ -191,73 +210,102 @@ _CATEGORY_HEADER_RE = re.compile(
 def _extract_prices(text: str, source_name: str) -> tuple[list[PriceItem], list[Treatment]]:
     """Run twee passes: vind prijslijnen en de bijbehorende categorie-header
     daarboven. Voeg de label-string toe als treatment-naam.
+
+    Ondersteunt drie regel-formats:
+      "<label> <amount>"               (Carlijn-stijl: één regel)
+      "<label>" gevolgd door "<amount>" (Frank/Mai-Kim-stijl: twee regels)
+      "<amount>"  (standalone, label staat erboven via pending-buffer)
     """
     prices: list[PriceItem] = []
     treatments: list[Treatment] = []
     seen_treatments: set[str] = set()
     current_category = ""
-    # Aantal prijzen geboekt onder de huidige categorie. Als dit 0 blijft
-    # voordat een nieuwe categorie verschijnt, was de vorige waarschijnlijk
-    # een nav-breadcrumb i.p.v. een echte prijslijst-header.
     items_in_current = 0
-    for lineno, raw in enumerate(text.splitlines(), start=1):
-        line = raw.strip()
-        if not line:
-            continue
-        # Pagina-marker uit collect.py: reset categorie. Voorkomt dat een
-        # nav-categorie van pagina A blijft hangen op pagina B's content.
-        if line.startswith("===") or line.startswith("(+31)") or line.startswith("©"):
-            current_category = ""
-            items_in_current = 0
-            continue
-        # Context-break: "Let op:" of "deze losse behandelingen ..." tekst
-        # markeert het einde van de huidige categorie. Volgende prijzen vallen
-        # onder een aparte 'Losse behandelingen' bucket tot een echte header
-        # ze opnieuw groepeert.
-        if line.lower().startswith("let op"):
-            current_category = "Losse behandelingen"
-            items_in_current = 0
-            continue
-        cat_match = _CATEGORY_HEADER_RE.match(line)
-        if cat_match:
-            current_category = line.rstrip(":")
-            items_in_current = 0
-            continue
-        match = _PRICE_LINE_RE.match(line)
-        if not match:
-            continue
-        label = match.group("label").strip().rstrip(",.").strip()
-        amount = match.group("amount").replace(" ", "")
+    # Buffer voor de laatste 'mogelijke label'-regel. Wordt gebruikt wanneer
+    # de volgende regel een standalone prijs blijkt te zijn.
+    pending_label: str | None = None
+
+    def _record(label: str, amount: str, lineno: int) -> None:
+        nonlocal items_in_current
+        amount_clean = amount.replace("€ ", "€").replace(" ", "").strip()
+        # ',-' = 'geen cents'; normaliseer naar '00' zodat pricelist consistent
+        # rendert ('€25,-' → '€25,00'? Nee, behoud de oorspronkelijke notatie
+        # voor brand-fidelity: als de bron ',-' gebruikt, doen wij dat ook.)
         duration: int | None = None
         dur_match = _DURATION_RE.search(label)
         if dur_match:
             duration = int(dur_match.group("min") or dur_match.group("min2"))
-        if len(label) < 3 or label.lower().startswith(("vanaf 1 jan ", "let op")):
-            label_clean = re.sub(r"^vanaf\s+\d+\s+\w+\s+", "", label, flags=re.IGNORECASE).strip()
-        else:
-            label_clean = label
-        # "vanaf" tussen label en prijs ("krullen lang haar: vanaf € 35,50") is
-        # geen onderdeel van de behandelingsnaam.
+        label_clean = re.sub(r"^vanaf\s+\d+\s+\w+\s+", "", label, flags=re.IGNORECASE).strip()
         label_clean = re.sub(r"\s*\bvanaf\s*$", "", label_clean, flags=re.IGNORECASE).strip()
-        # Trailing dubbele punt is een formatteringsartefact, hoort niet in de naam.
         label_clean = label_clean.rstrip(":").strip()
-        if not label_clean:
-            continue
+        if not label_clean or len(label_clean) < 2:
+            return
         provenance = Provenance(source=f"{source_name}:{lineno}", confidence="high")
         prices.append(PriceItem(
             label=label_clean,
-            amount=amount,
+            amount=amount_clean,
             duration_min=duration,
             category=current_category or "Overig",
             source=provenance,
         ))
         items_in_current += 1
-        # Treatment afgeleid uit prijslijst-label, dedupliceren op normalised name
         norm = re.sub(r"\(.*?\)", "", label_clean).strip().lower()
         norm = re.sub(r"\s+\d+\s*min.*$", "", norm).strip()
         if norm and norm not in seen_treatments:
             seen_treatments.add(norm)
             treatments.append(Treatment(name=label_clean, source=provenance))
+
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            pending_label = None
+            continue
+        # Pagina-marker / footer: reset alles
+        if line.startswith("===") or line.startswith("(+31)") or line.startswith("©"):
+            current_category = ""
+            items_in_current = 0
+            pending_label = None
+            continue
+        # Context-break "Let op:"
+        if line.lower().startswith("let op"):
+            current_category = "Losse behandelingen"
+            items_in_current = 0
+            pending_label = None
+            continue
+        # Categorie-header
+        cat_match = _CATEGORY_HEADER_RE.match(line)
+        if cat_match:
+            cat = line.rstrip(":")
+            # Mai-Kim heeft zowel "PEDICURE" als "Pedicure" als header op
+            # verschillende plaatsen — collapseren door alles in title-case te
+            # zetten als de bron all-caps gebruikt.
+            if cat.isupper():
+                cat = cat.title()
+            current_category = cat
+            items_in_current = 0
+            pending_label = None
+            continue
+        # Standalone prijs op eigen regel: gebruik pending-label van vorige regel
+        only_match = _PRICE_ONLY_RE.match(line)
+        if only_match:
+            if pending_label and 2 <= len(pending_label) <= 90:
+                _record(pending_label, only_match.group("amount"), lineno)
+            pending_label = None
+            continue
+        # Label+prijs op één regel
+        match = _PRICE_LINE_RE.match(line)
+        if not match:
+            # Geen match — bewaar als mogelijke pending-label voor de volgende
+            # standalone-prijs regel. Beperk lengte zodat lange paragrafen
+            # geen prijs-label worden.
+            if 3 <= len(line) <= 90 and not line.startswith(("- ", "* ")):
+                pending_label = line
+            else:
+                pending_label = None
+            continue
+        label = match.group("label").strip().rstrip(",.").strip()
+        _record(label, match.group("amount"), lineno)
+        pending_label = None
     return prices, treatments
 
 
