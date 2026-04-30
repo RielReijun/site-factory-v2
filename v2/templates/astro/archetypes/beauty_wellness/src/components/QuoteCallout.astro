@@ -1,0 +1,15 @@
+---
+const { quote, attribution, heading } = Astro.props;
+if (!quote) return null;
+const eyebrow = heading?.eyebrow || "In hun eigen woorden";
+---
+<section class="section section-tinted quote-callout" id="quote">
+  <div class="container quote-callout-inner">
+    <div class="section-eyebrow quote-callout-eyebrow">{eyebrow}</div>
+    <blockquote class="quote-callout-quote">
+      <span class="quote-callout-mark">"</span>
+      {quote}
+    </blockquote>
+    {attribution && <div class="quote-callout-attr">— {attribution}</div>}
+  </div>
+</section>

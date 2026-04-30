@@ -291,6 +291,8 @@ class LocalServiceArchetype:
                 "stats":        {"eyebrow": "In cijfers",      "title": ""},
                 "process":      {"eyebrow": "Werkwijze",       "title": "Zo gaat het bij ons"},
                 "featured":     {"eyebrow": "Onze focus",      "title": "Wat we het meest doen"},
+                "map":          {"eyebrow": "Werkgebied",      "title": "Vanuit hier werken we"},
+                "quoteCallout": {"eyebrow": "In eigen woorden", "title": ""},
             },
             "hero": {
                 "eyebrow": "Lokale vakman" + (f", {location}" if location else ""),
@@ -356,6 +358,10 @@ class LocalServiceArchetype:
                 {"title": "Oplevering",    "body": "Tevredenheid voorop. Bij vragen blijven wij bereikbaar."},
             ],
             "featured": {},  # B2B doet zelden 'signature service' spotlight
+            "quoteCallout": (
+                {"quote": inventory.signatures[1].quote, "attribution": company_name}
+                if len(inventory.signatures) >= 2 else {}
+            ),
         }
         if not plan["contactCta"]["tertiary"]:
             plan["contactCta"].pop("tertiary")

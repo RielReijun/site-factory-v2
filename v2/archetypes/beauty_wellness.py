@@ -1310,8 +1310,10 @@ class BeautyWellnessArchetype:
                 "openingHours": {"eyebrow": "Plannen",   "title": "Wanneer je terecht kunt"},
                 "about":    {"eyebrow": "Persoonlijk",   "title": f"Over {company_name}"},
                 "stats":    {"eyebrow": "In cijfers",     "title": ""},
-                "process":  {"eyebrow": "Werkwijze",      "title": "Hoe wij werken"},
-                "featured": {"eyebrow": "Signature",      "title": "Onze signature behandeling"},
+                "process":      {"eyebrow": "Werkwijze",      "title": "Hoe wij werken"},
+                "featured":     {"eyebrow": "Signature",      "title": "Onze signature behandeling"},
+                "map":          {"eyebrow": "Locatie",        "title": "Bezoek de salon"},
+                "quoteCallout": {"eyebrow": "In eigen woorden", "title": ""},
             },
             "hero": {
                 "eyebrow": eyebrow,
@@ -1372,6 +1374,17 @@ class BeautyWellnessArchetype:
             # Process-steps: voor sites met duidelijke werkwijze. Standaard
             # genericke 3-stap-flow; alleen tonen als briefing er over praat.
             "process": _pick_process_steps(briefing, sections),
+            # QuoteCallout: gebruik 2e signature voor een grote spotlight tussen
+            # about en gallery. Alleen als er minstens 2 signatures zijn én
+            # de 2e niet identiek aan signature[0] (die als hero gebruikt is).
+            "quoteCallout": (
+                {
+                    "quote":       inventory.signatures[1].quote,
+                    "attribution": company_name,
+                }
+                if len(inventory.signatures) >= 2
+                else {}
+            ),
         }
         if not plan["contactCta"]["tertiary"]:
             plan["contactCta"].pop("tertiary")

@@ -1,0 +1,40 @@
+---
+const { contact, heading } = Astro.props;
+const address = contact?.address;
+if (!address || address.length < 12) return null;
+const eyebrow = heading?.eyebrow || "Locatie";
+const title = heading?.title || "Bezoek de salon";
+// Google Maps embed via 'output=embed' query — geen API key nodig.
+// We escapen de address als query-parameter.
+const encoded = encodeURIComponent(address);
+const mapUrl = `https://www.google.com/maps?q=${encoded}&output=embed`;
+const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
+---
+<section class="section map-section" id="locatie">
+  <div class="container map-grid">
+    <div class="map-copy">
+      <div class="section-eyebrow">{eyebrow}</div>
+      <h2>{title}</h2>
+      <p class="map-address">{address}</p>
+      {contact?.phone && (
+        <p class="map-contact">
+          <a href={`tel:${contact.phone}`}>{contact.phone_display || contact.phone}</a>
+        </p>
+      )}
+      {contact?.email && (
+        <p class="map-contact">
+          <a href={`mailto:${contact.email}`}>{contact.email}</a>
+        </p>
+      )}
+      <a class="btn btn-outline" href={directionsUrl} target="_blank" rel="noopener">Route plannen</a>
+    </div>
+    <div class="map-frame">
+      <iframe
+        src={mapUrl}
+        loading="lazy"
+        title={`Kaart met ${address}`}
+        referrerpolicy="no-referrer-when-downgrade"
+      ></iframe>
+    </div>
+  </div>
+</section>
