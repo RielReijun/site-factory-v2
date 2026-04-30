@@ -71,8 +71,32 @@
       display: flex;
       flex-direction: column;
       transition: border-color 0.15s ease;
+      position: relative;
     }
     .card:hover { border-color: #3a4252; }
+    /* State-based border-coding */
+    .card[data-card-state="built-ok"]    { border-left: 4px solid var(--ok); }
+    .card[data-card-state="built-fail"]  { border-left: 4px solid var(--warn); }
+    .card[data-card-state="todo-ok"]     { border-left: 4px solid var(--info); }
+    .card[data-card-state="todo-fail"]   { border-left: 4px solid var(--fail); }
+    /* State-pill rechtsboven */
+    .state-pill {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid;
+      z-index: 1;
+    }
+    .state-pill.built-ok    { background: #1f3127; color: var(--ok);   border-color: #28432f; }
+    .state-pill.built-fail  { background: #3a2e1f; color: var(--warn); border-color: #4a3a25; }
+    .state-pill.todo-ok     { background: #1d2c3a; color: var(--info); border-color: #28384a; }
+    .state-pill.todo-fail   { background: #3a221f; color: var(--fail); border-color: #4a2725; }
     .card-color-strip {
       height: 6px;
       background: linear-gradient(90deg, var(--card-primary, #444), var(--card-accent, #888));
@@ -210,15 +234,17 @@
 
     <div class="filters">
       <div class="filter-group">
-        <button class="filter-btn active" data-filter="all">Alle</button>
-        <button class="filter-btn" data-filter="ready">Ready</button>
-        <button class="filter-btn" data-filter="failed">Gate failed</button>
-        <button class="filter-btn" data-filter="with-dist">Met dist</button>
+        <button class="filter-btn active" data-filter="all">Alle ({{ counts.total }})</button>
+        <button class="filter-btn" data-filter="built">Gebouwd ✓ ({{ counts.with_dist }})</button>
+        <button class="filter-btn" data-filter="todo">Te bouwen ({{ counts.total - counts.with_dist }})</button>
+        <button class="filter-btn" data-filter="ready">Gate-clean ({{ counts.ready }})</button>
+        <button class="filter-btn" data-filter="failed">Gate failed ({{ counts.gate_failed }})</button>
       </div>
       <div class="filter-group">
-        <button class="filter-btn active" data-archetype="all">Alle archetypes</button>
-        <button class="filter-btn" data-archetype="beauty_wellness">Beauty/Wellness</button>
-        <button class="filter-btn" data-archetype="local_service">Local Service</button>
+        <button class="filter-btn active" data-archetype="all">Alle types</button>
+        {% for arch in counts.by_archetype %}
+        <button class="filter-btn" data-archetype="{{ arch }}">{{ arch }} ({{ counts.by_archetype[arch] }})</button>
+        {% endfor %}
       </div>
       <input type="text" class="search-input" id="search" placeholder="Zoek op naam of slug..." />
     </div>
@@ -226,14 +252,21 @@
     <div class="grid" id="grid">
       {% for p in prospects %}
       {% set gate = p.gate %}
-      {% set ok = gate.ok and p.render_status == "rendered" %}
+      {% set gate_ok = gate.ok %}
+      {% set built = p.has_dist %}
+      {% if built and gate_ok %}{% set card_state = "built-ok" %}{% set pill_label = "✓ gebouwd" %}
+      {% elif built and not gate_ok %}{% set card_state = "built-fail" %}{% set pill_label = "✓ gebouwd · gate fail" %}
+      {% elif not built and gate_ok %}{% set card_state = "todo-ok" %}{% set pill_label = "○ te bouwen" %}
+      {% else %}{% set card_state = "todo-fail" %}{% set pill_label = "✗ gate fail" %}{% endif %}
       <article class="card"
                data-slug="{{ p.slug }}"
                data-archetype="{{ p.archetype }}"
-               data-state="{{ 'ready' if ok else ('failed' if not gate.ok else 'rendered') }}"
-               data-has-dist="{{ '1' if p.has_dist else '0' }}"
+               data-card-state="{{ card_state }}"
+               data-has-dist="{{ '1' if built else '0' }}"
+               data-gate-ok="{{ '1' if gate_ok else '0' }}"
                data-name="{{ (p.company_name or '')|lower }} {{ p.slug|lower }}"
                style="--card-primary: {{ p.theme.primary or '#444' }}; --card-accent: {{ p.theme.accent or '#888' }};">
+        <span class="state-pill {{ card_state }}">{{ pill_label }}</span>
         <div class="card-color-strip"></div>
         <div class="card-body">
           <div class="card-title">
@@ -298,14 +331,15 @@
 
     function applyFilters() {
       cards.forEach((card) => {
-        const state = card.dataset.state;
         const arch = card.dataset.archetype;
-        const hasDist = card.dataset.hasDist === "1";
+        const built = card.dataset.hasDist === "1";
+        const gateOk = card.dataset.gateOk === "1";
         const name = card.dataset.name || "";
         let visible = true;
-        if (stateFilter === "ready" && state !== "ready") visible = false;
-        if (stateFilter === "failed" && state !== "failed") visible = false;
-        if (stateFilter === "with-dist" && !hasDist) visible = false;
+        if (stateFilter === "built" && !built) visible = false;
+        if (stateFilter === "todo" && built) visible = false;
+        if (stateFilter === "ready" && !gateOk) visible = false;
+        if (stateFilter === "failed" && gateOk) visible = false;
         if (archetypeFilter !== "all" && arch !== archetypeFilter) visible = false;
         if (searchQuery && !name.includes(searchQuery)) visible = false;
         card.style.display = visible ? "" : "none";

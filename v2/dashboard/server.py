@@ -189,40 +189,57 @@ def serve_screenshot(slug: str, filename: str):
     return send_from_directory(screenshot_dir, filename)
 
 
-# ── Root-relative asset routing ──────────────────────────────────────────────
-# Astro produceert HTML met absolute paden zoals /_astro/index.HASH.css en
-# /assets/hero.jpg. Wanneer de browser daarna een sub-pagina laadt onder
-# /sites/<slug>/, vraagt hij die assets op vanaf het dashboard-root i.p.v.
-# vanaf /sites/<slug>/. Hetzelfde patroon dat v1's dashboard ook had —
-# fix via Referer-header: kijk waar de pagina vandaan kwam.
+# ── Root-relative routing via Referer ────────────────────────────────────────
+# Astro produceert HTML met absolute paden — zowel voor assets (/_astro/...,
+# /assets/hero.jpg) als voor subpagina-navigatie (/over-mij/, /tarieven/).
+# Browser vraagt die op vanaf het dashboard-root i.p.v. /sites/<slug>/...
+# Fix: Referer-header parseren om te weten welke prospect bedoeld is.
 import re
 from urllib.parse import urlparse
 from flask import redirect
 
 _REFERER_SLUG_RE = re.compile(r"^/sites/([^/]+)/")
 _ROOT_ASSET_PREFIXES = ("_astro/", "assets/", "favicon.")
+# Dashboard-eigen routes die we nooit naar prospect-dist mogen redirecten.
+_DASHBOARD_PATHS = re.compile(r"^(api|sites|screenshots|health|static)(/|$)")
 
 
 @app.get("/<path:rootpath>")
 def serve_root_relative_via_referer(rootpath: str):
-    """Catch-all voor /_astro/*, /assets/* etc. die door root-relative
-    Astro-paths worden opgevraagd. Resolveer welk slug bedoeld is via
-    Referer, en serveer of redirect."""
-    if not any(rootpath.startswith(p) for p in _ROOT_ASSET_PREFIXES):
+    """Catch-all voor root-relative paths uit een prospect-pagina.
+
+    - Asset-prefixes (/_astro/*, /assets/*, /favicon.*): serveer direct uit
+      het dist/-pad van de slug die in de Referer staat.
+    - Andere paths (/over-mij/, /tarieven/): 302-redirect naar
+      /sites/<slug>/<path> zodat de URL-bar correct meeloopt.
+    """
+    # Voorkom recursie op dashboard-eigen paths
+    if _DASHBOARD_PATHS.match(rootpath):
         abort(404)
+
     referer = request.headers.get("Referer", "")
     parsed = urlparse(referer)
     match = _REFERER_SLUG_RE.match(parsed.path or "")
     if not match:
         abort(404)
     slug = match.group(1)
-    target = ARTIFACTS_DIR / slug / "astro-source" / "dist" / rootpath
-    if not target.exists():
-        abort(404)
-    return send_from_directory(
-        ARTIFACTS_DIR / slug / "astro-source" / "dist",
-        rootpath,
-    )
+
+    # Asset-prefixes serveren we direct uit de dist (niet redirecten —
+    # browser cached relative URLs anders inconsistent).
+    if any(rootpath.startswith(p) for p in _ROOT_ASSET_PREFIXES):
+        dist_dir = ARTIFACTS_DIR / slug / "astro-source" / "dist"
+        target = dist_dir / rootpath
+        if not target.exists():
+            abort(404)
+        return send_from_directory(dist_dir, rootpath)
+
+    # Sub-pagina navigatie: redirect naar /sites/<slug>/<path> zodat de
+    # browser-URL klopt en vervolg-clicks weer juiste Referer hebben.
+    target_url = f"/sites/{slug}/{rootpath}"
+    # Behoud trailing slash zoals Astro die graag heeft (trailingSlash:always)
+    if not target_url.endswith("/") and "." not in rootpath.split("/")[-1]:
+        target_url += "/"
+    return redirect(target_url, code=302)
 
 
 @app.get("/health")
