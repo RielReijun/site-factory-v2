@@ -495,6 +495,46 @@ def _extract_signatures(text: str, source_name: str) -> list[Signature]:
     return found[:8]
 
 
+# ── Treatments fallback uit pagina-titels ────────────────────────────────────
+# Veel beauty/wellness sites tonen geen prijslijst (massage-only, nail-only,
+# enz.) maar hebben wel pagina-structuur als /ontspanningsmassage, /pedicure.
+# Die titels ZIJN behandelingen — gebruiken als fallback wanneer de
+# prijs-extractie 0 treatments oplevert.
+_TREATMENT_PAGE_SKIP_RE = re.compile(
+    r"^(home|over\s*(ons|mij)|contact|tarieven|prijzen|"
+    r"privacy|voorwaarden|algemene|disclaimer|cookie|cadeaubon|"
+    r"nieuwsbrief|online\s+reserveren|reserveren|booking|legal|"
+    r"sitemap|404|blog|nieuws|portfolio|werk|projecten|producten|"
+    r"team|vacature|faq|veelgestelde|inloggen|login)\b",
+    re.IGNORECASE,
+)
+
+
+def _treatments_from_pages(pages_json: dict, source_name: str = "pages.json") -> list[Treatment]:
+    """Fallback wanneer prijzen leeg zijn: leid treatments af uit pagina-
+    titels die op behandelingsnamen lijken. Filter generic nav-pagina's."""
+    out: list[Treatment] = []
+    seen: set[str] = set()
+    for entry in (pages_json.get("pages") or []):
+        title = (entry.get("title") or "").strip()
+        if not title or len(title) > 60:
+            continue
+        if _TREATMENT_PAGE_SKIP_RE.match(title):
+            continue
+        norm = title.lower()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(Treatment(
+            name=title,
+            source=Provenance(
+                source=f"{source_name}:{entry.get('file','?')}",
+                confidence="medium",
+            ),
+        ))
+    return out[:8]
+
+
 # ── Per-pagina content extractie ─────────────────────────────────────────────
 def _normalize_page_slug(name: str) -> str:
     """Normaliseer pagina-namen tot vergelijkbare slugs.
@@ -639,14 +679,15 @@ _BOOKING_PHRASES = {
 }
 
 
-def _extract_contact(structured: dict, briefing: str, text: str) -> ContactInfo:
+def _extract_contact(structured: dict, briefing: str, text: str, raw_html: str = "") -> ContactInfo:
     raw = structured.get("contact") if isinstance(structured.get("contact"), dict) else {}
     phone = (raw.get("phone") or "").strip()
     email = (raw.get("email") or "").strip()
     raw_address = (raw.get("address") or "").strip()
 
-    # Fallback: pak telefoon/email uit text.txt als structured_data leeg/kapot
-    # is. Veel WordPress-sites tonen het nummer expliciet in de footer.
+    # Fallback-volgorde: text.txt → raw.html (tel:/mailto: hrefs).
+    # Veel sites tonen het nummer in de footer, maar wij kunnen het
+    # missen omdat text.txt-conversie het soms verminkt of overslaat.
     if not phone:
         phone_match = re.search(
             r"\b(?:\+31\s?|0031\s?)?0?6[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}\b",
@@ -654,13 +695,46 @@ def _extract_contact(structured: dict, briefing: str, text: str) -> ContactInfo:
         )
         if phone_match:
             phone = re.sub(r"[\s-]", "", phone_match.group(0))
-            # Normaliseer 06... naar +316... voor tel:-links
             if phone.startswith("06"):
                 phone = "+31" + phone[1:]
+    if not phone and raw_html:
+        # Parse <a href="tel:..."> hrefs — meest betrouwbare bron want
+        # de site-eigenaar heeft hem zelf als klikbare link gezet.
+        tel_match = re.search(r'href=["\']tel:([+\d\s\-()]+)["\']', raw_html, re.IGNORECASE)
+        if tel_match:
+            digits = re.sub(r"[\s\-()]", "", tel_match.group(1))
+            if digits.startswith("00"):
+                digits = "+" + digits[2:]
+            elif digits.startswith("0") and len(digits) >= 10:
+                digits = "+31" + digits[1:]
+            phone = digits
+        else:
+            # Fallback: strip HTML-tags en zoek 'tel: 072-...'-achtige patronen
+            # of een NL phone-pattern in de buurt van een 'tel'-keyword.
+            text_only = re.sub(r"<[^>]+>", " ", raw_html)
+            inline_match = re.search(
+                r"(?:tel|telefoon|t)[\.:]?\s*(\+?[\d][\d\s\-()]{8,18})",
+                text_only,
+                re.IGNORECASE,
+            )
+            if inline_match:
+                digits = re.sub(r"[\s\-()]", "", inline_match.group(1))
+                # Sanity check: NL nummer heeft 10-12 cijfers, eventueel +31 prefix
+                clean = digits.lstrip("+")
+                if 9 <= len(clean) <= 12:
+                    if digits.startswith("00"):
+                        digits = "+" + digits[2:]
+                    elif digits.startswith("0") and len(digits) >= 10:
+                        digits = "+31" + digits[1:]
+                    phone = digits
     if not email:
         email_match = re.search(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", text)
         if email_match:
             email = email_match.group(0)
+    if not email and raw_html:
+        mail_match = re.search(r'href=["\']mailto:([\w.+\-]+@[\w.-]+)["\']', raw_html, re.IGNORECASE)
+        if mail_match:
+            email = mail_match.group(1)
 
     address_match = re.search(
         r"([A-Z][\w'.\- ]+?\s+\d+[A-Za-z]?(?:\s?-\s?\d+)?),?\s+(\d{4}\s?[A-Z]{2})\s+([A-Z][\w'.\- ]+)",
@@ -772,7 +846,7 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
     brands = _extract_brands(text + "\n" + briefing, "text.txt+briefing.md")
     hours = _extract_hours(text, "text.txt")
     reviews, review_warnings = _extract_reviews(raw_html, "raw.html")
-    contact = _extract_contact(structured, briefing, text)
+    contact = _extract_contact(structured, briefing, text, raw_html)
     pages = _extract_pages(pages_json, briefing)
     images = _extract_images(collected_path)
 
@@ -790,6 +864,18 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
                     source=Provenance(source="briefing.md:Behoud uit huidige site", confidence="high"),
                 ))
                 seen.add(clean.lower())
+
+    # Fallback wanneer geen prijzen gevonden zijn: leid treatments af uit
+    # pagina-titels (massage/nagelstudio's hebben vaak geen prijslijst online,
+    # wel pagina's per behandeling). Voorkomt dat de gate faalt op
+    # treatments.min_count terwijl de bron wel duidelijk een dienstenaanbod
+    # heeft, alleen niet in prijsvorm.
+    if len(treatments) < 3:
+        for t in _treatments_from_pages(pages_json):
+            if t.name.lower() in seen:
+                continue
+            treatments.append(t)
+            seen.add(t.name.lower())
 
     warnings: list[str] = []
     warnings.extend(review_warnings)

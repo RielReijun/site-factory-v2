@@ -1026,7 +1026,11 @@ _BEAUTY_WELLNESS_CONTRACT: list[FieldCheck] = [
         rule="required_if_evidence",
         severity="fail",
         evidence_pattern=r"€\s?\d|\b\d+,\d{2}\s*€",
-        rationale="Als de bron €-bedragen bevat, móét /tarieven/ ze tonen — anders is de site een downgrade",
+        # 3+ €-mentions = waarschijnlijk een prijslijst. 1-2 mentions zijn
+        # vaak losse fees in voorwaarden of cursus-prijzen die geen
+        # tarievenpagina rechtvaardigen.
+        evidence_min_matches=3,
+        rationale="Als de bron 3+ €-bedragen bevat, móét /tarieven/ ze tonen — anders is de site een downgrade",
     ),
     FieldCheck(
         field="opening_hours",

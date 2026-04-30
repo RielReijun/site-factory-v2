@@ -26,14 +26,19 @@ class FieldCheck:
       - "required"             : veld moet niet-leeg zijn
       - "recommended"          : missing → warn
       - "min_count"            : len(veld) >= min_count
-      - "required_if_evidence" : if veld leeg + evidence_pattern matcht in
-                                 source-tekst → fail; anders pass
+      - "required_if_evidence" : if veld leeg + evidence_pattern komt
+                                 minstens evidence_min_matches keer voor
+                                 in source-tekst → fail; anders pass
     """
     field: str                          # dotted path: "contact.phone", "prices", "images"
     rule: str
     severity: str = "warn"              # "fail" | "warn"
     min_count: int = 1
     evidence_pattern: str = ""
+    # Minimaal aantal pattern-matches om als 'sterke evidence' te tellen.
+    # Voorkomt dat 1-2 toevallige €-mentions in voorwaarden- of FAQ-tekst
+    # een price-list signal worden.
+    evidence_min_matches: int = 1
     rationale: str = ""
 
 
@@ -130,13 +135,19 @@ def _evaluate(check: FieldCheck, inventory: ContentInventory, source_text: str) 
             return _result(True, f"{check.field}: {_length(value)} aanwezig")
         if not check.evidence_pattern:
             return _result(True, f"{check.field}: leeg, geen evidence-pattern gedefinieerd")
-        if re.search(check.evidence_pattern, source_text):
+        matches = re.findall(check.evidence_pattern, source_text)
+        if len(matches) >= check.evidence_min_matches:
             return _result(
                 False,
-                f"{check.field}: leeg, maar bron bevat patroon "
-                f"'{check.evidence_pattern}' — extractor heeft het gemist",
+                f"{check.field}: leeg, maar bron bevat {len(matches)} "
+                f"matches op '{check.evidence_pattern}' "
+                f"(threshold: {check.evidence_min_matches}) — extractor heeft het gemist",
             )
-        return _result(True, f"{check.field}: leeg, bron had ook geen evidence")
+        return _result(
+            True,
+            f"{check.field}: leeg, slechts {len(matches)} evidence-matches "
+            f"(< threshold {check.evidence_min_matches})",
+        )
 
     return _result(False, f"onbekende rule: {rule}")
 
