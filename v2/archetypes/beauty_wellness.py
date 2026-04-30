@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from v2.pipeline.inventory import ContentInventory, build_inventory
+from v2.pipeline.personality import pick_personality
 from v2.pipeline.quality_gate import FieldCheck
 
 from .base import Archetype, ArchetypeMatch
@@ -346,11 +347,23 @@ def _pick_home_section_order(sig_type: str) -> list[str]:
     return ["services", "about", "gallery", "reviews", "openingHours", "contactCta"]
 
 
-def _pick_hero_variant(sig_type: str, has_image: bool) -> str:
-    """Hero-mode: split (default), split-reverse (image-links voor portrait-
-    emphasis bij identity), of image-bg (full-bleed met mission-overlay)."""
+def _pick_hero_variant(sig_type: str, has_image: bool, personality_name: str = "soft") -> str:
+    """Hero-mode keuze, primair op personality, secundair op signature-type.
+
+    luxe    → image-bg (full-bleed dramatic photo + overlay)
+    sharp   → split (clean text-image grid, geen drama)
+    playful → split-reverse (foto links, energieke layout)
+    soft    → afhankelijk van signature-type (huidige heuristiek)
+    """
     if not has_image:
         return "split"
+    if personality_name == "luxe":
+        return "image-bg"
+    if personality_name == "sharp":
+        return "split"
+    if personality_name == "playful":
+        return "split-reverse"
+    # soft (default): val terug op signature-driven keuze
     if sig_type == "identity":
         return "split-reverse"
     if sig_type in ("mission_strong", "invitation"):
@@ -1197,10 +1210,15 @@ class BeautyWellnessArchetype:
         # verschillende home-pagina's, zonder per-prospect handwerk.
         sig_type = _signature_type(inventory.signatures)
         home_section_order = _pick_home_section_order(sig_type)
-        hero_variant = _pick_hero_variant(sig_type, has_image=bool(inventory.images))
-        gallery_variant = _pick_gallery_variant(sig_type, n_categories=len(price_groups))
         # Voice profile bepaalt aanspreekvorm voor CTA-copy en sub-page noten.
         voice_copy = _voice_copy(inventory.voice_profile)
+        # Personality bepaalt micro-signalen + skeleton-keuzes (hero variant).
+        # 4 zelfde-archetype-prospects krijgen daarmee echt verschillende
+        # shapes, niet alleen verschillende kleuren.
+        personality = pick_personality(inventory)
+        hero_variant = _pick_hero_variant(sig_type, has_image=bool(inventory.images),
+                                          personality_name=personality.name)
+        gallery_variant = _pick_gallery_variant(sig_type, n_categories=len(price_groups))
 
         pages = _decorate_pages(
             _extract_pages(collected_path),
@@ -1249,9 +1267,11 @@ class BeautyWellnessArchetype:
             },
             "variants": {
                 "gallery": gallery_variant,
+                "personality": personality.to_dict(),
                 "_signature_type": sig_type,
                 "_home_section_order": home_section_order,
             },
+            "typography": inventory.typography.to_dict(),
             "services": services,
             "prices": {
                 "title": "Tarieven",

@@ -1,5 +1,7 @@
 /* Beauty/Wellness archetype — base styles. Deterministic; do not edit per build. */
 
+/* Default-vars hier; BaseLayout.astro overschrijft theme/typography/personality
+ * via define:vars op basis van inventory-signalen. */
 :root {
   --primary: #b8936a;
   --primary-dark: #8d6e4f;
@@ -13,9 +15,14 @@
   --shadow-sm: 0 1px 2px rgba(44, 44, 44, 0.06);
   --shadow-md: 0 12px 36px rgba(120, 95, 70, 0.12);
   --shadow-lg: 0 28px 80px rgba(120, 95, 70, 0.18);
-  --radius-sm: 4px;
-  --radius-md: 10px;
-  --radius-lg: 18px;
+  /* Personality-driven; default = soft preset */
+  --card-radius: 10px;
+  --btn-radius: 4px;
+  --section-pad: 96px;
+  --heading-weight: 500;
+  --radius-sm: var(--btn-radius);
+  --radius-md: var(--card-radius);
+  --radius-lg: calc(var(--card-radius) * 1.8);
   --container: 1180px;
   --font-heading: "Playfair Display", "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --font-body: "Inter", "Lato", "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -43,9 +50,9 @@ h1, h2, h3, h4 {
   line-height: 1.15;
   margin: 0 0 0.5em;
 }
-h1 { font-size: clamp(40px, 6vw, 68px); font-weight: 500; }
-h2 { font-size: clamp(28px, 3.6vw, 44px); font-weight: 500; }
-h3 { font-size: clamp(20px, 2.2vw, 26px); font-weight: 600; }
+h1 { font-size: clamp(40px, 6vw, 68px); font-weight: var(--heading-weight); }
+h2 { font-size: clamp(28px, 3.6vw, 44px); font-weight: var(--heading-weight); }
+h3 { font-size: clamp(20px, 2.2vw, 26px); font-weight: calc(var(--heading-weight) + 100); }
 p  { margin: 0 0 1em; color: var(--text); }
 
 .container {
@@ -292,9 +299,9 @@ p  { margin: 0 0 1em; color: var(--text); }
 
 /* Section base */
 .section {
-  padding: 96px 0;
+  padding: var(--section-pad) 0;
 }
-.section-tight { padding: 72px 0; }
+.section-tight { padding: calc(var(--section-pad) * 0.75) 0; }
 .section-tinted { background: var(--accent); }
 .section-dark {
   background: var(--secondary);
@@ -833,3 +840,124 @@ p  { margin: 0 0 1em; color: var(--text); }
   .brand { font-size: 18px; }
   .brand img { width: 36px; height: 36px; }
 }
+
+/* ── Personality-specific overrides ──────────────────────────────────────── */
+/* Body krijgt data-personality van BaseLayout. Hieronder override-regels per
+ * variant zodat 4 zelfde-archetype-prospects echt verschillende aesthetic
+ * shapes krijgen, niet alleen verschillende kleuren. */
+
+/* SHARP / clinical — strakke hoeken, geen schaduw, formele sans-serif */
+body[data-personality="sharp"] {
+  letter-spacing: 0.005em;
+}
+body[data-personality="sharp"] .hero {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding-top: 72px;
+  padding-bottom: 64px;
+}
+body[data-personality="sharp"] .hero-visual {
+  border-radius: 0;
+  box-shadow: none;
+}
+body[data-personality="sharp"] .service-card,
+body[data-personality="sharp"] .price-group,
+body[data-personality="sharp"] .treatment-card,
+body[data-personality="sharp"] .product-panel,
+body[data-personality="sharp"] .gallery-item,
+body[data-personality="sharp"] .hours-wrap {
+  border-radius: 0;
+}
+body[data-personality="sharp"] .section-tinted {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+body[data-personality="sharp"] .btn {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+}
+body[data-personality="sharp"] .contact-cta {
+  border-radius: 0;
+}
+
+/* LUXE — donkere bg-vibe, dramatic shadows, kleine radius, ruimer typografie */
+body[data-personality="luxe"] {
+  background: var(--background);
+}
+body[data-personality="luxe"] h1,
+body[data-personality="luxe"] h2 {
+  letter-spacing: -0.02em;
+  font-style: italic;
+}
+body[data-personality="luxe"] .hero {
+  padding-top: 132px;
+  padding-bottom: 110px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, var(--secondary) 20%) 0%, var(--background) 80%);
+}
+body[data-personality="luxe"] .hero-visual {
+  border-radius: 2px;
+  box-shadow: var(--shadow-lg);
+}
+body[data-personality="luxe"] .service-card,
+body[data-personality="luxe"] .price-group,
+body[data-personality="luxe"] .treatment-card {
+  border: none;
+  box-shadow: var(--shadow-md);
+  background: var(--surface);
+}
+body[data-personality="luxe"] .gallery-item {
+  border-radius: 2px;
+}
+body[data-personality="luxe"] .btn-primary {
+  background: var(--secondary);
+  color: var(--background);
+}
+body[data-personality="luxe"] .btn-primary:hover {
+  background: var(--primary);
+}
+body[data-personality="luxe"] .btn-outline {
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+body[data-personality="luxe"] .section-eyebrow {
+  letter-spacing: 0.3em;
+}
+
+/* PLAYFUL — grote radius (pill buttons), zachte shadows, energieke spacing */
+body[data-personality="playful"] {
+  letter-spacing: -0.005em;
+}
+body[data-personality="playful"] h1 {
+  letter-spacing: -0.025em;
+}
+body[data-personality="playful"] .hero {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 60%, var(--primary) 20%) 0%, var(--background) 80%);
+}
+body[data-personality="playful"] .hero-visual,
+body[data-personality="playful"] .service-card,
+body[data-personality="playful"] .service-card-image,
+body[data-personality="playful"] .gallery-item,
+body[data-personality="playful"] .price-group,
+body[data-personality="playful"] .treatment-card,
+body[data-personality="playful"] .product-panel,
+body[data-personality="playful"] .hours-wrap,
+body[data-personality="playful"] .contact-cta {
+  border-radius: 24px;
+}
+body[data-personality="playful"] .btn {
+  border-radius: 999px;
+  padding: 0 28px;
+}
+body[data-personality="playful"] .section {
+  padding: 72px 0;
+}
+body[data-personality="playful"] .nav-cta .btn-primary {
+  border-radius: 999px;
+}
+body[data-personality="playful"] .brand img {
+  border-radius: 24%;
+}
+
+/* SOFT (default) — geen overrides nodig, gewoon de basis-CSS */

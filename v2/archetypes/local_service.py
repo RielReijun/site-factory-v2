@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from v2.pipeline.inventory import ContentInventory, build_inventory
+from v2.pipeline.personality import pick_personality
 from v2.pipeline.quality_gate import FieldCheck
 
 from .base import Archetype, ArchetypeMatch
@@ -198,7 +199,9 @@ class LocalServiceArchetype:
             home_sections = ["about", "services", "gallery", "reviews", "contactCta"]
         else:
             home_sections = ["services", "gallery", "about", "reviews", "contactCta"]
-        hero_variant = bw._pick_hero_variant(sig_type, has_image=bool(inventory.images))
+        personality = pick_personality(inventory)
+        hero_variant = bw._pick_hero_variant(sig_type, has_image=bool(inventory.images),
+                                             personality_name=personality.name)
         gallery_variant = bw._pick_gallery_variant(sig_type, n_categories=4)
 
         # B2B-specifieke voice-copy: vraag-offerte vorm i.p.v. reserveer-vorm
@@ -297,9 +300,11 @@ class LocalServiceArchetype:
             },
             "variants": {
                 "gallery": gallery_variant,
+                "personality": personality.to_dict(),
                 "_signature_type": sig_type,
                 "_home_section_order": home_sections,
             },
+            "typography": inventory.typography.to_dict(),
             "services": services,
             # Geen prices (B2B), geen treatments, geen products
             "prices":     {"title": "", "groups": []},

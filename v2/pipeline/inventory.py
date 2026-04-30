@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .typography import Typography, extract_typography
 from .visual_dna import VisualDNA, extract_visual_dna
 from .voice_profile import VoiceProfile, extract_voice_profile
 
@@ -132,6 +133,7 @@ class ContentInventory:
     signatures: list[Signature] = field(default_factory=list)
     pages_content: dict[str, PageContent] = field(default_factory=dict)
     voice_profile: VoiceProfile = field(default_factory=VoiceProfile)
+    typography: Typography = field(default_factory=Typography)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -916,6 +918,12 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
             "default je-vorm copy"
         )
 
+    typography = extract_typography(raw_html)
+    if typography.method == "default":
+        warnings.append(
+            "Geen typografie geextraheerd uit raw.html — render gebruikt default fonts"
+        )
+
     return ContentInventory(
         slug=slug,
         company_name=company_name,
@@ -933,4 +941,5 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
         signatures=signatures,
         pages_content=pages_content,
         voice_profile=voice_profile,
+        typography=typography,
     )
