@@ -62,6 +62,19 @@ class Review:
 
 
 @dataclass
+class Signature:
+    """Een verbatim zin uit de bron die de stem van het bedrijf vangt.
+
+    Niet hertaald, niet samengevat. Bedoeld om de hero, about-sectie of CTA
+    te vullen met taal die de prospect zelf herkent.
+    """
+    quote: str
+    score: int
+    page: str
+    source: Provenance
+
+
+@dataclass
 class ContactInfo:
     phone: str = ""
     phone_display: str = ""
@@ -100,6 +113,7 @@ class ContentInventory:
     sources_inspected: list[str]
     warnings: list[str]
     visual_dna: VisualDNA = field(default_factory=VisualDNA)
+    signatures: list[Signature] = field(default_factory=list)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -297,6 +311,122 @@ def _extract_hours(text: str, source_name: str) -> list[HoursRow]:
                 source=Provenance(source=f"{source_name}:{lineno}", confidence="high"),
             ))
     return rows
+
+
+# ── Signature-zinnen ─────────────────────────────────────────────────────────
+# Verbatim zinnen die de stem van het bedrijf vangen. Niet om te paraphraseren;
+# bedoeld om hero/about/CTA te vullen met taal die de prospect zelf herkent.
+_SIG_FIRST_PERSON_RE = re.compile(r"^(?:Ik|Mijn|Wij|Onze)\b")
+_SIG_INVITATION_RE   = re.compile(r"^(?:Ben je|Wil je|Kom je|Bent u|Wilt u|Welkom)\b")
+_SIG_CTA_RE          = re.compile(r"^(?:Boek|Plan|Reserveer|Maak|Bekijk|Ontdek|Kies)\b")
+_SIG_PROMISE_RE      = re.compile(
+    r"\b(?:sta voor|geloof|missie|passie|specialiseer|trots|"
+    r"gepassioneerd|gespecialiseerd|verwen|in de watten|persoonlijke aandacht)",
+    re.IGNORECASE,
+)
+# Identiteits-/missie-openers verdienen extra gewicht: dit zijn de zinnen die
+# klanten zelf als hero/about willen zien ("Ik ben X", "Mijn missie is Y").
+_SIG_IDENTITY_RE = re.compile(
+    r"^(?:Ik ben|Mijn naam|Wij zijn|Onze missie|Onze visie|"
+    r"Mijn doel|Mijn missie|Mijn avontuur|Mijn passie|Ik geloof)\b"
+)
+# Conditionele/modale zinnen ("Ik wil graag X", "Ik kan Y") horen bij FAQ's en
+# hypothesen, niet bij hero-content. Verlaag hun score zodat echte signature-
+# zinnen ze passeren.
+_SIG_MODAL_RE = re.compile(
+    r"^(?:Ik wil graag|Ik wil|Ik kan|Ik weet|Ik traan|Ik tril|Wil je weten)\b"
+)
+
+_SIG_REJECT_PATTERNS = [
+    re.compile(r"@\S+\.\w+"),                         # email
+    re.compile(r"https?://"),                          # url
+    re.compile(r"\bwww\."),
+    re.compile(r"\b\d{4}\s?[A-Z]{2}\b"),               # postcode (adres)
+    re.compile(r"^\s*=+\s*Pagina"),
+    re.compile(r"\bcookie", re.IGNORECASE),
+    re.compile(r"\bprivacyverklaring", re.IGNORECASE),
+    re.compile(r"\balgemene voorwaarden", re.IGNORECASE),
+    re.compile(r"\bdisclaimer", re.IGNORECASE),
+    re.compile(r"©"),                                  # footer copyright
+    re.compile(r"\bpowered by\b", re.IGNORECASE),      # footer "Powered by JouwWeb"
+    re.compile(r"\bgegevens te verzamelen\b", re.IGNORECASE),  # privacy boilerplate
+]
+
+# Pagina-namen die geen signature-content opleveren — uitsluiten als bron.
+_SIG_SKIP_PAGES = re.compile(
+    r"(?:privacy|voorwaarden|disclaimer|cookie|sitemap|404|nieuwsbrief)",
+    re.IGNORECASE,
+)
+
+_PAGE_MARKER_RE = re.compile(r"^=+\s*Pagina:\s*(.*?)\s*=+$", re.MULTILINE)
+
+
+def _split_pages(text: str) -> list[tuple[str, str]]:
+    """Splits text.txt op `=== Pagina: <name> ===` markers. Geeft lijst van
+    (page_name, content) terug. Pagina's zonder marker krijgen ''-naam."""
+    parts = _PAGE_MARKER_RE.split(text)
+    if len(parts) < 3:
+        return [("", text)]
+    pages: list[tuple[str, str]] = []
+    # parts: [pre-text, name1, content1, name2, content2, ...]
+    if parts[0].strip():
+        pages.append(("", parts[0]))
+    for i in range(1, len(parts), 2):
+        name = parts[i].strip()
+        content = parts[i + 1] if i + 1 < len(parts) else ""
+        pages.append((name, content))
+    return pages
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Naive zinsplit op .?! gevolgd door whitespace of regelend.
+    Goed genoeg voor MKB-content; kommagebruik is irrelevant."""
+    return re.split(r"(?<=[.!?])\s+", text)
+
+
+def _extract_signatures(text: str, source_name: str) -> list[Signature]:
+    """Pak top-scorende verbatim zinnen die het merk uitdragen."""
+    found: list[Signature] = []
+    seen: set[str] = set()
+    for page_name, content in _split_pages(text):
+        if page_name and _SIG_SKIP_PAGES.search(page_name):
+            continue
+        for raw in _split_sentences(content):
+            sentence = re.sub(r"\s+", " ", raw).strip()
+            if not (30 <= len(sentence) <= 300):
+                continue
+            if any(p.search(sentence) for p in _SIG_REJECT_PATTERNS):
+                continue
+            alpha = [c for c in sentence if c.isalpha()]
+            if alpha and sum(c.isupper() for c in alpha) / len(alpha) > 0.6:
+                continue
+            score = 0
+            if _SIG_FIRST_PERSON_RE.match(sentence):
+                score += 3
+            if _SIG_INVITATION_RE.match(sentence):
+                score += 2
+            if _SIG_CTA_RE.match(sentence):
+                score += 1
+            if _SIG_PROMISE_RE.search(sentence):
+                score += 2
+            if _SIG_IDENTITY_RE.match(sentence):
+                score += 4
+            if _SIG_MODAL_RE.match(sentence):
+                score -= 3
+            if score <= 0:
+                continue
+            normalized = sentence.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            found.append(Signature(
+                quote=sentence,
+                score=score,
+                page=page_name,
+                source=Provenance(source=source_name, confidence="high"),
+            ))
+    found.sort(key=lambda s: (s.score, len(s.quote)), reverse=True)
+    return found[:8]
 
 
 # ── Reviews / testimonials ───────────────────────────────────────────────────
@@ -535,6 +665,13 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
             f"render valt terug op briefing-kleuren"
         )
 
+    signatures = _extract_signatures(text, "text.txt")
+    if not signatures:
+        warnings.append(
+            "Geen signature-zinnen gevonden in text.txt — hero/about valt terug "
+            "op briefing-extractie"
+        )
+
     return ContentInventory(
         slug=slug,
         company_name=company_name,
@@ -549,4 +686,5 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
         sources_inspected=sources_inspected,
         warnings=warnings,
         visual_dna=visual_dna,
+        signatures=signatures,
     )

@@ -978,8 +978,23 @@ class BeautyWellnessArchetype:
         services = _inventory_to_services(inventory, price_groups)
         treatments = _extract_treatments(source_text)
         products = _extract_product_story(source_text, briefing)
-        signature = _extract_signature(sections)
+        # Prefer verbatim signatures uit text.txt (inventory). Briefing-fallback
+        # alleen als de inventory niets vond. Zo komen Carlijn's "Mijn doel
+        # is om jou even helemaal in de watten te leggen" en Valk's "Ik ben
+        # Cynthia Valk..." letterlijk op de site, niet hertaald.
+        if inventory.signatures:
+            signature = inventory.signatures[0].quote
+        else:
+            signature = _extract_signature(sections)
+
         about_body, about_signature = _extract_about_quotes(sections)
+        # Als inventory >=2 signatures heeft, gebruik die voor about-body en
+        # about-signature i.p.v. de briefing-quotes.
+        if len(inventory.signatures) >= 2:
+            about_signature = inventory.signatures[0].quote
+            about_body = inventory.signatures[1].quote
+        elif inventory.signatures:
+            about_signature = inventory.signatures[0].quote
         if not about_body:
             about_body = sections.get("project", "").splitlines()[0] if sections.get("project") else company_name
 
