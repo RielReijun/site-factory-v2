@@ -8,13 +8,18 @@ import Reviews from "../components/Reviews.astro";
 import OpeningHours from "../components/OpeningHours.astro";
 import About from "../components/About.astro";
 import ContactCta from "../components/ContactCta.astro";
+import Stats from "../components/Stats.astro";
 
 const homePage = (sitePlan.pages || []).find((p) => !p.slug) || {};
-const sections = homePage.sections || ["services", "about", "gallery", "reviews", "openingHours", "contactCta"];
+const baseSections = homePage.sections || ["services", "about", "gallery", "reviews", "openingHours", "contactCta"];
+// Stats automatisch invoegen direct na hero als stats-data aanwezig is
+const hasStats = sitePlan.stats && sitePlan.stats.length >= 2;
+const sections = hasStats ? ["stats", ...baseSections] : baseSections;
 ---
 <BaseLayout title={sitePlan.company_name} description={sitePlan.tagline}>
   <Hero hero={sitePlan.hero} sitePlan={sitePlan} />
   {sections.map((name) => {
+    if (name === "stats")        return <Stats stats={sitePlan.stats} heading={sitePlan.headings?.stats} />;
     if (name === "services")     return <Services services={sitePlan.services} heading={sitePlan.headings?.services} />;
     if (name === "about")        return <About about={sitePlan.about} heading={sitePlan.headings?.about} />;
     if (name === "gallery")      return <Gallery gallery={sitePlan.gallery} heading={sitePlan.headings?.gallery} variant={sitePlan.variants?.gallery} />;

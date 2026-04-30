@@ -1184,13 +1184,21 @@ class BeautyWellnessArchetype:
         if not about_body:
             about_body = sections.get("project", "").splitlines()[0] if sections.get("project") else company_name
 
-        # Hero copy uit briefing eerste project-bullet, anders signature.
+        # Hero copy: source_copy.tagline (uit og:description / h1) wint van
+        # signature. Origineel-uniek voor elke prospect.
         project_lines = _bullet_lines(sections.get("project", ""))
         hero_body = ""
-        if signature:
+        sc = inventory.source_copy
+        if sc.tagline and len(sc.tagline) >= 30:
+            hero_body = _clean_dashes(sc.tagline)
+        elif signature:
             hero_body = signature
         elif project_lines:
             hero_body = _clean_dashes(project_lines[0])
+
+        # Originele primary CTA-label (bv. "Boek nu", "Maak een afspraak")
+        # wint van onze gegenereerde "Online reserveren".
+        original_cta = sc.primary_cta if sc.primary_cta and len(sc.primary_cta) >= 4 else ""
 
         location = ""
         for line in project_lines:
@@ -1250,6 +1258,7 @@ class BeautyWellnessArchetype:
                 "reviews":  {"eyebrow": "Vertrouwen",    "title": "Hoe ik werk"},
                 "openingHours": {"eyebrow": "Plannen",   "title": "Wanneer je terecht kunt"},
                 "about":    {"eyebrow": "Persoonlijk",   "title": f"Over {company_name}"},
+                "stats":    {"eyebrow": "In cijfers",     "title": ""},
             },
             "hero": {
                 "eyebrow": eyebrow,
@@ -1257,7 +1266,7 @@ class BeautyWellnessArchetype:
                 "body": hero_body,
                 "image": "",
                 "variant": hero_variant,
-                "primaryCta": {"label": voice_copy["contact_cta_primary"], "href": "#contact"},
+                "primaryCta": {"label": original_cta or voice_copy["contact_cta_primary"], "href": "#contact"},
                 "secondaryCta": {"label": voice_copy["hero_secondary"], "href": "#diensten"},
                 "meta": [
                     {"label": "Persoonlijk", "value": "altijd één behandelaar"},
@@ -1295,10 +1304,15 @@ class BeautyWellnessArchetype:
             "contactCta": {
                 "title": voice_copy["contact_cta_title"],
                 "body":  voice_copy["contact_cta_body"],
-                "primary":   {"label": voice_copy["contact_cta_primary"],   "href": "#contact"},
+                "primary":   {"label": original_cta or voice_copy["contact_cta_primary"], "href": "#contact"},
                 "secondary": {"label": voice_copy["contact_cta_secondary"], "href": f"tel:{contact['phone']}" if contact.get("phone") else "#"},
                 "tertiary":  {"label": voice_copy["contact_cta_tertiary"],  "href": whatsapp_url} if whatsapp_url else None,
             },
+            "stats": [
+                {"value": s["value"] if isinstance(s, dict) else s.value,
+                 "label": s["label"] if isinstance(s, dict) else s.label}
+                for s in inventory.source_copy.stats
+            ],
         }
         if not plan["contactCta"]["tertiary"]:
             plan["contactCta"].pop("tertiary")

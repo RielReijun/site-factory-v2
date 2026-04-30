@@ -1,0 +1,24 @@
+---
+const { stats, heading } = Astro.props;
+if (!stats || stats.length === 0) return null;
+const eyebrow = heading?.eyebrow || "In cijfers";
+const title = heading?.title || "";
+---
+<section class="section section-tight stats-section" id="stats">
+  <div class="container">
+    {(eyebrow || title) && (
+      <header class="section-header stats-header">
+        {eyebrow && <div class="section-eyebrow">{eyebrow}</div>}
+        {title && <h2>{title}</h2>}
+      </header>
+    )}
+    <div class="stats-grid">
+      {stats.map((stat) => (
+        <div class="stat-card">
+          <div class="stat-value">{stat.value}</div>
+          <div class="stat-label">{stat.label}</div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

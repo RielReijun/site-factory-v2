@@ -160,15 +160,20 @@ class LocalServiceArchetype:
             "whatsapp":  whatsapp_url,
         }
 
-        # Hero copy: signature wint, anders eerste project-bullet uit briefing
+        # Hero copy: source_copy.tagline wint, dan signature, dan briefing-bullet
         sections = bw._split_sections(briefing)
+        sc = inventory.source_copy
         signature = ""
-        if inventory.signatures:
+        if sc.tagline and len(sc.tagline) >= 30:
+            signature = bw._clean_dashes(sc.tagline)
+        elif inventory.signatures:
             signature = inventory.signatures[0].quote
         if not signature:
             project_lines = bw._bullet_lines(sections.get("project", ""))
             if project_lines:
                 signature = bw._clean_dashes(project_lines[0])
+        # Originele CTA-label uit raw.html
+        original_cta = sc.primary_cta if sc.primary_cta and len(sc.primary_cta) >= 4 else ""
 
         location = ""
         for line in bw._bullet_lines(sections.get("project", "")):
@@ -207,14 +212,14 @@ class LocalServiceArchetype:
         # B2B-specifieke voice-copy: vraag-offerte vorm i.p.v. reserveer-vorm
         is_u_form = (inventory.voice_profile.addressing == "u")
         if is_u_form:
-            cta_primary    = "Vraag offerte aan"
+            cta_primary    = original_cta or "Vraag offerte aan"
             cta_secondary  = "Bel direct"
             cta_tertiary   = "Stuur een WhatsApp-bericht"
             cta_title      = "Klaar om uw project te bespreken?"
             cta_body       = "Laat ons weten wat u zoekt, dan komen wij vrijblijvend langs voor een offerte op maat."
             hero_secondary = "Bekijk projecten"
         else:
-            cta_primary    = "Vraag offerte aan"
+            cta_primary    = original_cta or "Vraag offerte aan"
             cta_secondary  = "Bel direct"
             cta_tertiary   = "App ons via WhatsApp"
             cta_title      = "Klaar om je project te bespreken?"
@@ -283,6 +288,7 @@ class LocalServiceArchetype:
                 "reviews":      {"eyebrow": "Vertrouwen",     "title": "Wat opdrachtgevers ervaren"},
                 "openingHours": {"eyebrow": "Bereikbaar",     "title": "Wanneer je ons kunt bereiken"},
                 "about":        {"eyebrow": "Het verhaal",    "title": f"Over {company_name}"},
+                "stats":        {"eyebrow": "In cijfers",      "title": ""},
             },
             "hero": {
                 "eyebrow": "Lokale vakman" + (f", {location}" if location else ""),
@@ -329,6 +335,10 @@ class LocalServiceArchetype:
                 "secondary": {"label": cta_secondary, "href": f"tel:{contact['phone']}" if contact["phone"] else "#"},
                 "tertiary":  {"label": cta_tertiary,  "href": whatsapp_url} if whatsapp_url else None,
             },
+            "stats": [
+                {"value": s.value, "label": s.label}
+                for s in inventory.source_copy.stats
+            ],
         }
         if not plan["contactCta"]["tertiary"]:
             plan["contactCta"].pop("tertiary")

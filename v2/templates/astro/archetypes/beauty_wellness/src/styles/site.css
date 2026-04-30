@@ -841,6 +841,40 @@ p  { margin: 0 0 1em; color: var(--text); }
   .brand img { width: 36px; height: 36px; }
 }
 
+/* Stats strip — toont 'X jaar / Y projecten' uit source_copy */
+.stats-section {
+  background: color-mix(in srgb, var(--accent) 50%, var(--surface));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.stats-header {
+  margin-bottom: 32px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 24px;
+  text-align: center;
+}
+.stat-card {
+  padding: 14px 8px;
+}
+.stat-value {
+  font-family: var(--font-heading);
+  font-size: clamp(40px, 5vw, 64px);
+  font-weight: var(--heading-weight);
+  color: var(--primary);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.stat-label {
+  margin-top: 8px;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+
 /* ── Personality-specific overrides ──────────────────────────────────────── */
 /* Body krijgt data-personality van BaseLayout. Hieronder override-regels per
  * variant zodat 4 zelfde-archetype-prospects echt verschillende aesthetic

@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .source_copy import SourceCopy, extract_source_copy
 from .typography import Typography, extract_typography
 from .visual_dna import VisualDNA, extract_visual_dna
 from .voice_profile import VoiceProfile, extract_voice_profile
@@ -134,6 +135,7 @@ class ContentInventory:
     pages_content: dict[str, PageContent] = field(default_factory=dict)
     voice_profile: VoiceProfile = field(default_factory=VoiceProfile)
     typography: Typography = field(default_factory=Typography)
+    source_copy: SourceCopy = field(default_factory=SourceCopy)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -418,6 +420,11 @@ _SIG_REJECT_PATTERNS = [
     re.compile(r"©"),                                  # footer copyright
     re.compile(r"\bpowered by\b", re.IGNORECASE),      # footer "Powered by JouwWeb"
     re.compile(r"\bgegevens te verzamelen\b", re.IGNORECASE),  # privacy boilerplate
+    # Nav-fragmenten en gescraped page-text die soms als 'Onze ...'-zin
+    # door het filter glipt.
+    re.compile(r"\b(toggle|navigation|navigate)\b", re.IGNORECASE),
+    re.compile(r"\b0\d{1,2}\s*[-\s]\s*\d{2,3}\s*[-\s]?\s*\d{2,3}"),  # phone met spaties/streepjes
+    re.compile(r"\b\+31\s*\d"),                         # +31 telefoon
 ]
 
 # Pagina-namen die geen signature-content opleveren — uitsluiten als bron.
@@ -924,6 +931,12 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
             "Geen typografie geextraheerd uit raw.html — render gebruikt default fonts"
         )
 
+    source_copy = extract_source_copy(raw_html, text)
+    if source_copy.method != "extracted":
+        warnings.append(
+            f"source_copy mining gaf {source_copy.method} — render gebruikt default tagline/CTA"
+        )
+
     return ContentInventory(
         slug=slug,
         company_name=company_name,
@@ -942,4 +955,5 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
         pages_content=pages_content,
         voice_profile=voice_profile,
         typography=typography,
+        source_copy=source_copy,
     )
