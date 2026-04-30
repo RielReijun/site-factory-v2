@@ -731,11 +731,58 @@ def _decorate_pages(
     ]
     pcs = pages_content or {}
 
+    def _fuzzy_match_page(slug: str) -> Any:
+        """Vind de beste pages_content match voor een pages.json-slug.
+
+        Slug-mismatches komen veel voor: pages.json zegt 'knippen',
+        text.txt heeft 'prijzen-knipbehandelingen'; pages.json zegt
+        'nagels', text.txt heeft 'beautybehandelingen-valk-beauty-health/
+        nagels/overzicht-nagels'. Een substring/stem-match dekt deze
+        gevallen zonder per-prospect handwerk.
+
+        Score-based:
+          + 10 als hele slug substring is van text-key
+          +  4 per token (>=4 chars) van slug dat in text-key voorkomt
+          +  2 per stem-match (eerste 4 chars van token >=5 chars)
+          +  2 als text-key 'overzicht' bevat (landing-page van categorie)
+          -  2 per pad-niveau in text-key (voorkeur voor top-level)
+          tiebreak: meeste paragrafen wint
+        """
+        if not slug or not pcs:
+            return None
+        if slug in pcs:
+            return pcs[slug]
+        slug_tokens = [t for t in re.split(r"[-_/]", slug) if len(t) >= 4]
+        best = None
+        best_score = 0
+        for key, pc in pcs.items():
+            if not key:
+                continue
+            score = 0
+            if slug in key:
+                score += 10
+            for token in slug_tokens:
+                if token in key:
+                    score += 4
+                elif len(token) >= 5 and token[:4] in key:
+                    score += 2
+            if "overzicht" in key:
+                score += 2
+            score -= 2 * key.count("/")
+            if score <= 0:
+                continue
+            pc_paras = getattr(pc, "paragraph_count", 0)
+            best_paras = getattr(best, "paragraph_count", 0) if best else 0
+            if score > best_score or (score == best_score and pc_paras > best_paras):
+                best = pc
+                best_score = score
+        return best
+
     def _from_pages_content(slug: str) -> tuple[str, str, list[str]]:
         """Helper: pak verbatim lead/body/bullets uit inventory wanneer er een
-        page-content match is voor deze slug. Geeft ('', '', []) terug als
-        geen match — dan vallen we terug op hardcoded copy."""
-        pc = pcs.get(slug)
+        (fuzzy) page-content match is voor deze slug. Geeft ('', '', []) terug
+        als geen match — dan vallen we terug op hardcoded copy."""
+        pc = _fuzzy_match_page(slug)
         if not pc:
             return "", "", []
         lead = pc.lead if hasattr(pc, "lead") else (pc.get("lead") if isinstance(pc, dict) else "")
