@@ -279,6 +279,66 @@ def _extract_contact(structured: dict[str, Any], briefing: str) -> dict[str, str
     }
 
 
+def _signature_type(signatures: list) -> str:
+    """Categoriseer de top-signature in een type dat layout-keuzes informeert.
+
+    Drie hoofd-types breken het cousin-effect: identity ('Ik ben X' / 'Mijn
+    naam Y'), mission_strong ('Mijn missie' / 'Mijn passie'), mission_soft
+    ('Mijn doel' / 'Ik geloof') en invitation ('Welkom' / 'Ben je toe aan').
+    Geen match valt terug op 'generic' = default look.
+    """
+    if not signatures:
+        return "generic"
+    quote = signatures[0].quote.lower()
+    if quote.startswith(("ik ben", "mijn naam", "wij zijn")):
+        return "identity"
+    head = quote[:60]
+    if "missie" in head or "passie" in head:
+        return "mission_strong"
+    if "doel is" in head or "ik geloof" in head:
+        return "mission_soft"
+    if quote.startswith(("welkom", "ben je", "wil je")):
+        return "invitation"
+    return "generic"
+
+
+def _pick_home_section_order(sig_type: str) -> list[str]:
+    """Section-volgorde op homepage afgestemd op het type signature."""
+    if sig_type == "identity":
+        # Persoonlijk verhaal eerst — past bij 'Ik ben X'-zinnen.
+        return ["about", "services", "gallery", "reviews", "openingHours", "contactCta"]
+    if sig_type == "invitation":
+        # Sfeer/galerij vlak na hero — past bij uitnodigende toon.
+        return ["services", "gallery", "about", "reviews", "openingHours", "contactCta"]
+    # mission_strong / mission_soft / generic
+    return ["services", "about", "gallery", "reviews", "openingHours", "contactCta"]
+
+
+def _pick_hero_variant(sig_type: str, has_image: bool) -> str:
+    """Hero-mode: split (default), split-reverse (image-links voor portrait-
+    emphasis bij identity), of image-bg (full-bleed met mission-overlay)."""
+    if not has_image:
+        return "split"
+    if sig_type == "identity":
+        return "split-reverse"
+    if sig_type in ("mission_strong", "invitation"):
+        return "image-bg"
+    return "split"
+
+
+def _pick_gallery_variant(sig_type: str, n_categories: int) -> str:
+    """Gallery-mode: grid (4-up met tall hero), masonry (variabele aspecten)
+    of strip (compact 3-up). Sites met sterke missie krijgen masonry voor
+    showcase-feel; identity-sites strip voor compacter ritme."""
+    if sig_type == "identity":
+        return "strip"
+    if sig_type == "mission_strong" or n_categories >= 6:
+        return "masonry"
+    if n_categories <= 2:
+        return "strip"
+    return "grid"
+
+
 def _darken_hex(hex_color: str, amount: int = 18) -> str:
     """Maak een donkerder versie van een #RRGGBB voor hover-states.
 
@@ -655,15 +715,19 @@ def _decorate_pages(
     price_groups: list[dict[str, Any]],
     treatments: list[dict[str, Any]],
     products: dict[str, Any],
+    home_section_order: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Maak subpagina's inhoudelijk verschillend zonder runtime codegeneratie."""
     service_titles = [service.get("title", "Behandeling") for service in services]
     first_services = service_titles[:4] or ["persoonlijke behandeling"]
+    home_sections = home_section_order or [
+        "services", "about", "gallery", "reviews", "openingHours", "contactCta"
+    ]
 
     for page in pages:
         slug = page.get("slug", "")
         if not slug:
-            page["sections"] = ["services", "about", "gallery", "reviews", "openingHours", "contactCta"]
+            page["sections"] = list(home_sections)
             continue
 
         title = page.get("title") or slug.replace("-", " ").title()
@@ -1018,6 +1082,15 @@ class BeautyWellnessArchetype:
         if location:
             eyebrow = f"Beautysalon, {location}"
 
+        # Layout-heuristieken: kies section-volgorde + hero-variant + gallery-
+        # variant op basis van het type signature en de inventory-rijkdom.
+        # Doel: drie prospects van hetzelfde archetype krijgen drie zichtbaar
+        # verschillende home-pagina's, zonder per-prospect handwerk.
+        sig_type = _signature_type(inventory.signatures)
+        home_section_order = _pick_home_section_order(sig_type)
+        hero_variant = _pick_hero_variant(sig_type, has_image=bool(inventory.images))
+        gallery_variant = _pick_gallery_variant(sig_type, n_categories=len(price_groups))
+
         pages = _decorate_pages(
             _extract_pages(collected_path),
             services,
@@ -1026,6 +1099,7 @@ class BeautyWellnessArchetype:
             price_groups,
             treatments,
             products,
+            home_section_order=home_section_order,
         )
 
         plan: dict[str, Any] = {
@@ -1051,6 +1125,7 @@ class BeautyWellnessArchetype:
                 "headline": company_name,
                 "body": hero_body,
                 "image": "",
+                "variant": hero_variant,
                 "primaryCta": {"label": "Online reserveren", "href": "#contact"},
                 "secondaryCta": {"label": "Bekijk behandelingen", "href": "#diensten"},
                 "meta": [
@@ -1058,6 +1133,11 @@ class BeautyWellnessArchetype:
                     {"label": "Locatie",     "value": location or "in de regio"},
                     {"label": "Plannen",     "value": "telefoon of WhatsApp"},
                 ],
+            },
+            "variants": {
+                "gallery": gallery_variant,
+                "_signature_type": sig_type,
+                "_home_section_order": home_section_order,
             },
             "services": services,
             "prices": {
@@ -1131,6 +1211,16 @@ def _pick_archetype_assets(collected_path: Path, plan: dict[str, Any]) -> dict[s
     used: set[Path] = set()
 
     hero_src = _pick_first(images, _HERO_PATTERNS)
+    # Fallback: als geen pattern-match, neem de eerste decente photo. _find_assets
+    # filtert al ruis (bg_noise, sprites, icons) weg, dus images[0] is meestal
+    # bruikbaar. Dit voorkomt dat prospects zonder Carlijn-achtige bestandsnamen
+    # met een leeg hero-image renderen (relevant voor de image-bg variant).
+    if hero_src is None:
+        for candidate in images:
+            if candidate == logo_src:
+                continue
+            hero_src = candidate
+            break
     if hero_src:
         dst = f"assets/hero{hero_src.suffix.lower()}"
         copies.append((hero_src, dst))

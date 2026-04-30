@@ -8,16 +8,29 @@ const image = hero.image;
 const primary = hero.primaryCta;
 const secondary = hero.secondaryCta;
 const meta = hero.meta || [];
+// Variant kan: "split" (default; tekst-links + foto-rechts), "image-bg"
+// (full-bleed foto met overlay), "split-reverse" (foto-links + tekst-rechts).
+const variant = hero.variant || "split";
+const heroClass = variant === "image-bg"
+  ? "hero hero-image-bg"
+  : variant === "split-reverse"
+    ? "hero hero-split-reverse"
+    : "hero hero-split";
 ---
-<section class="hero">
-  <div class="container hero-grid">
-    <div class="hero-copy">
+{variant === "image-bg" ? (
+  <section class={heroClass}>
+    {image && (
+      <div class="hero-bg-image" aria-hidden="true">
+        <img src={image} alt="" loading="eager" />
+      </div>
+    )}
+    <div class="container hero-bg-content">
       {eyebrow && <span class="hero-eyebrow">{eyebrow}</span>}
       <h1 class="hero-title">{headline}</h1>
       {body && <p class="hero-lead">{body}</p>}
       <div class="hero-actions">
         {primary && <a class="btn btn-primary" href={primary.href}>{primary.label}</a>}
-        {secondary && <a class="btn btn-outline" href={secondary.href}>{secondary.label}</a>}
+        {secondary && <a class="btn btn-outline-light" href={secondary.href}>{secondary.label}</a>}
       </div>
       {meta.length > 0 && (
         <div class="hero-meta">
@@ -27,10 +40,31 @@ const meta = hero.meta || [];
         </div>
       )}
     </div>
-    {image && (
-      <div class="hero-visual">
-        <img src={image} alt={`${sitePlan.company_name} sfeerbeeld`} loading="eager" />
+  </section>
+) : (
+  <section class={heroClass}>
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        {eyebrow && <span class="hero-eyebrow">{eyebrow}</span>}
+        <h1 class="hero-title">{headline}</h1>
+        {body && <p class="hero-lead">{body}</p>}
+        <div class="hero-actions">
+          {primary && <a class="btn btn-primary" href={primary.href}>{primary.label}</a>}
+          {secondary && <a class="btn btn-outline" href={secondary.href}>{secondary.label}</a>}
+        </div>
+        {meta.length > 0 && (
+          <div class="hero-meta">
+            {meta.map((item) => (
+              <span><strong>{item.label}</strong> {item.value}</span>
+            ))}
+          </div>
+        )}
       </div>
-    )}
-  </div>
-</section>
+      {image && (
+        <div class="hero-visual">
+          <img src={image} alt={`${sitePlan.company_name} sfeerbeeld`} loading="eager" />
+        </div>
+      )}
+    </div>
+  </section>
+)}

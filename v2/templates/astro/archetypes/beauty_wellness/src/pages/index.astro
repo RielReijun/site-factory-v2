@@ -8,13 +8,19 @@ import Reviews from "../components/Reviews.astro";
 import OpeningHours from "../components/OpeningHours.astro";
 import About from "../components/About.astro";
 import ContactCta from "../components/ContactCta.astro";
+
+const homePage = (sitePlan.pages || []).find((p) => !p.slug) || {};
+const sections = homePage.sections || ["services", "about", "gallery", "reviews", "openingHours", "contactCta"];
 ---
 <BaseLayout title={sitePlan.company_name} description={sitePlan.tagline}>
   <Hero hero={sitePlan.hero} sitePlan={sitePlan} />
-  <Services services={sitePlan.services} heading={sitePlan.headings?.services} />
-  <About about={sitePlan.about} heading={sitePlan.headings?.about} />
-  <Gallery gallery={sitePlan.gallery} heading={sitePlan.headings?.gallery} />
-  <Reviews reviews={sitePlan.reviews} heading={sitePlan.headings?.reviews} />
-  <OpeningHours openingHours={sitePlan.openingHours} contact={sitePlan.contact} heading={sitePlan.headings?.openingHours} />
-  <ContactCta contactCta={sitePlan.contactCta} contact={sitePlan.contact} social={sitePlan.social} />
+  {sections.map((name) => {
+    if (name === "services")     return <Services services={sitePlan.services} heading={sitePlan.headings?.services} />;
+    if (name === "about")        return <About about={sitePlan.about} heading={sitePlan.headings?.about} />;
+    if (name === "gallery")      return <Gallery gallery={sitePlan.gallery} heading={sitePlan.headings?.gallery} variant={sitePlan.variants?.gallery} />;
+    if (name === "reviews")      return <Reviews reviews={sitePlan.reviews} heading={sitePlan.headings?.reviews} />;
+    if (name === "openingHours") return <OpeningHours openingHours={sitePlan.openingHours} contact={sitePlan.contact} heading={sitePlan.headings?.openingHours} />;
+    if (name === "contactCta")   return <ContactCta contactCta={sitePlan.contactCta} contact={sitePlan.contact} social={sitePlan.social} />;
+    return null;
+  })}
 </BaseLayout>
