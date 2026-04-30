@@ -80,20 +80,28 @@ def _list_prospect_slugs(filter_slug: str | None = None) -> list[str]:
 
 
 def _astro_build(source_dir: Path) -> tuple[bool, str]:
-    """Run npm install + npx astro build via docker site-factory-worker.
-    Geeft (success, last-output-line) terug."""
+    """Run npm install + npx astro build. Detecteert of we al in een docker
+    container draaien (en dus direct shell kunnen gebruiken) of vanaf host
+    via `docker run --rm` moeten."""
     if not source_dir.exists():
         return False, "astro source ontbreekt"
-    rel = source_dir.relative_to(PROJECT_DIR)
-    cmd = [
-        "docker", "run", "--rm",
-        "-v", f"{PROJECT_DIR}:/workspace",
-        "-w", f"/workspace/{rel}",
-        "site-factory-worker",
-        "bash", "-lc",
-        "npm install --silent 2>&1 | tail -1 && npx astro build 2>&1 | tail -3",
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    in_docker = Path("/.dockerenv").exists() or shutil.which("docker") is None
+    if in_docker:
+        # Direct shell binnen worker — node is hier beschikbaar
+        cmd = ["bash", "-lc",
+               "npm install --silent 2>&1 | tail -1 && npx astro build 2>&1 | tail -3"]
+        proc = subprocess.run(cmd, cwd=str(source_dir), capture_output=True, text=True, timeout=180)
+    else:
+        rel = source_dir.relative_to(PROJECT_DIR)
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{PROJECT_DIR}:/workspace",
+            "-w", f"/workspace/{rel}",
+            "site-factory-worker",
+            "bash", "-lc",
+            "npm install --silent 2>&1 | tail -1 && npx astro build 2>&1 | tail -3",
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     output = (proc.stdout + proc.stderr).strip().splitlines()
     last = output[-1] if output else ""
     return proc.returncode == 0, last
