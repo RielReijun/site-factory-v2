@@ -5,11 +5,12 @@ from typing import Any
 
 from .base import Archetype
 from .beauty_wellness import BeautyWellnessArchetype
+from .local_service import LocalServiceArchetype
 
 
 def registered_archetypes() -> list[Archetype]:
     """Volgorde bepaalt tie-break: eerste komt voor bij gelijke score."""
-    return [BeautyWellnessArchetype()]
+    return [LocalServiceArchetype(), BeautyWellnessArchetype()]
 
 
 def detect_archetype(

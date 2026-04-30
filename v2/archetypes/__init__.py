@@ -12,12 +12,14 @@ from __future__ import annotations
 
 from .base import Archetype, ArchetypeMatch
 from .beauty_wellness import BeautyWellnessArchetype
+from .local_service import LocalServiceArchetype
 from .detect import detect_archetype, registered_archetypes
 
 __all__ = [
     "Archetype",
     "ArchetypeMatch",
     "BeautyWellnessArchetype",
+    "LocalServiceArchetype",
     "detect_archetype",
     "registered_archetypes",
 ]
