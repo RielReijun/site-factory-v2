@@ -1,0 +1,1104 @@
+"""Beauty & wellness archetype.
+
+Bouwt een rich site plan op uit een bestaande collected prospect en delegeert
+de Astro-rendering aan render_archetype. Geen runtime LLM-calls.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+from v2.pipeline.inventory import ContentInventory, build_inventory
+from v2.pipeline.quality_gate import FieldCheck
+
+from .base import Archetype, ArchetypeMatch
+
+
+# ── Detectie keywords ────────────────────────────────────────────────────────
+# Zwaar wegende termen scoren hoger; alleen presentie wordt geteld, niet frequentie.
+_HEAVY_KEYWORDS = [
+    "beautysalon", "schoonheidssalon", "schoonheidsspecialist", "kapsalon",
+    "kapper", "wellness", "wellness center", "spa", "huidverbetering",
+    "lash lift", "lash volume lift", "wimperextensions", "hair salon",
+    "beauty salon", "nagelstudio", "nail salon",
+]
+_LIGHT_KEYWORDS = [
+    "salon", "behandeling", "behandelingen", "gezichtsbehandeling",
+    "manicure", "pedicure", "harsen", "wenkbrauw", "wimpers",
+    "massage", "facial", "skincare", "huidverzorging", "wax",
+    "make-up", "visagie", "ontharing",
+]
+
+
+# ── Asset patronen ───────────────────────────────────────────────────────────
+# Bestanden die we als gallery-foto willen tonen (in voorkeursvolgorde) en
+# patronen die we willen weren (theme-stock, logo overlays, achtergrondruis).
+_GALLERY_PATTERNS_PREFER = [
+    re.compile(r"image0000\d", re.IGNORECASE),
+    re.compile(r"image0-\d", re.IGNORECASE),
+    re.compile(r"WhatsApp-Image", re.IGNORECASE),
+    re.compile(r"bb-facelifting", re.IGNORECASE),
+    re.compile(r"cremes-organic", re.IGNORECASE),
+    re.compile(r"organic-skincare", re.IGNORECASE),
+    re.compile(r"salon", re.IGNORECASE),
+    re.compile(r"treatment", re.IGNORECASE),
+    re.compile(r"interior", re.IGNORECASE),
+]
+_GALLERY_BLOCKLIST = [
+    re.compile(r"bg_noise", re.IGNORECASE),
+    re.compile(r"layer-12", re.IGNORECASE),
+    re.compile(r"rectangle", re.IGNORECASE),
+    re.compile(r"icon", re.IGNORECASE),
+    re.compile(r"sprite", re.IGNORECASE),
+    re.compile(r"logo", re.IGNORECASE),
+    re.compile(r"thumbnail", re.IGNORECASE),
+    re.compile(r"avatar", re.IGNORECASE),
+]
+_PORTRAIT_PATTERNS = [
+    re.compile(r"weening", re.IGNORECASE),
+    re.compile(r"carlijn", re.IGNORECASE),
+    re.compile(r"team-1", re.IGNORECASE),
+    re.compile(r"about", re.IGNORECASE),
+    re.compile(r"portrait", re.IGNORECASE),
+    re.compile(r"profile", re.IGNORECASE),
+    re.compile(r"owner", re.IGNORECASE),
+]
+_HERO_PATTERNS = [
+    re.compile(r"banner-1-e\d", re.IGNORECASE),
+    re.compile(r"banner-1\b", re.IGNORECASE),
+    re.compile(r"image00001", re.IGNORECASE),
+    re.compile(r"hero", re.IGNORECASE),
+    re.compile(r"main-banner", re.IGNORECASE),
+    re.compile(r"home/banner", re.IGNORECASE),
+]
+
+
+# ── Briefing parsing helpers ─────────────────────────────────────────────────
+_HEX_RE = re.compile(r"#[0-9a-fA-F]{6}\b")
+_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$")
+
+
+def _split_sections(briefing: str) -> dict[str, str]:
+    """Split de briefing op `## ` headers naar een dict van sectienaam -> body."""
+    sections: dict[str, str] = {}
+    current_name: str | None = None
+    current_lines: list[str] = []
+    for line in briefing.splitlines():
+        match = _SECTION_RE.match(line)
+        if match:
+            if current_name is not None:
+                sections[current_name.lower()] = "\n".join(current_lines).strip()
+            current_name = match.group(1).strip()
+            current_lines = []
+        elif current_name is not None:
+            current_lines.append(line)
+    if current_name is not None:
+        sections[current_name.lower()] = "\n".join(current_lines).strip()
+    return sections
+
+
+def _bullet_lines(section_body: str) -> list[str]:
+    """Pak bullet-lijnen uit een section body (lijnen die met '- ' beginnen)."""
+    return [
+        line.strip().lstrip("- ").strip()
+        for line in section_body.splitlines()
+        if line.strip().startswith("- ")
+    ]
+
+
+def _clean_dashes(text: str) -> str:
+    return text.replace("—", ", ").replace("–", ", ")
+
+
+# ── Beautysalon-specifieke service-extractie ─────────────────────────────────
+_SERVICE_DEFAULTS = [
+    {
+        "key": "gezichtsbehandelingen",
+        "title": "Gezichtsbehandelingen",
+        "description": "Behandelingen op maat met natuurlijke producten voor een verzorgde, stralende huid.",
+        "match": [r"gezichtsbehandel", r"facial", r"botanical", r"hydrop"],
+    },
+    {
+        "key": "lash-lift",
+        "title": "Lash Volume Lift",
+        "description": "Lift en accentueer je eigen wimpers voor een wakkere, open blik die weken meegaat.",
+        "match": [r"lash lift", r"lash volume", r"wimper", r"elleebana"],
+    },
+    {
+        "key": "massage",
+        "title": "Massages",
+        "description": "Wellness-massages om los te laten, spanning te verminderen en weer adem te halen.",
+        "match": [r"massage", r"wellness"],
+    },
+    {
+        "key": "harsen-verven",
+        "title": "Harsen en verven",
+        "description": "Ontharing en wenkbrauw- of wimperverf voor een verzorgd, afgewerkt resultaat.",
+        "match": [r"harsen", r"verven", r"wenkbrauw", r"ontharing", r"wax"],
+    },
+    {
+        "key": "manicure",
+        "title": "Manicure",
+        "description": "Verzorgde nagels en handen, met aandacht voor detail.",
+        "match": [r"manicure", r"nagel"],
+    },
+    {
+        "key": "pedicure",
+        "title": "Pedicure",
+        "description": "Voetverzorging en pedicurebehandelingen voor verzorgde voeten.",
+        "match": [r"pedicure", r"voet"],
+    },
+]
+
+
+def _extract_services(briefing: str) -> list[dict[str, Any]]:
+    """Bepaal welke standaard-diensten in de briefing voorkomen."""
+    haystack = briefing.lower()
+    services: list[dict[str, Any]] = []
+    for entry in _SERVICE_DEFAULTS:
+        if any(re.search(pattern, haystack) for pattern in entry["match"]):
+            services.append({
+                "key": entry["key"],
+                "title": entry["title"],
+                "description": entry["description"],
+            })
+    if not services:
+        services = [
+            {"key": "behandelingen", "title": "Behandelingen", "description": "Persoonlijke behandelingen op maat."}
+        ]
+    return services
+
+
+def _extract_signature(sections: dict[str, str]) -> str:
+    """Pak een markante zin uit 'Behoud uit huidige site' of 'Tone of voice'."""
+    body = sections.get("behoud uit huidige site", "")
+    for line in body.splitlines():
+        if "signature" in line.lower() or "slogan" in line.lower() or "merkbelofte" in line.lower():
+            quote = re.search(r'"([^"]{10,}?)"', line)
+            if quote:
+                return _clean_dashes(quote.group(1))
+    fallback = sections.get("tone of voice", "")
+    quote = re.search(r'"([^"]{10,}?)"', fallback)
+    return _clean_dashes(quote.group(1)) if quote else ""
+
+
+def _extract_about_quotes(sections: dict[str, str]) -> tuple[str, str]:
+    """Geef (body, signature) terug uit 'Behoud uit huidige site'."""
+    body_section = sections.get("behoud uit huidige site", "")
+    quotes: list[str] = []
+    signature = ""
+    for line in body_section.splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        match = re.search(r'"([^"]+)"', line)
+        if not match:
+            continue
+        quote = _clean_dashes(match.group(1)).strip()
+        if not quote:
+            continue
+        if not signature and ("signature" in line.lower() or "slogan" in line.lower()):
+            signature = quote
+        else:
+            quotes.append(quote)
+    body = " ".join(quotes[:2]).strip()
+    if not body:
+        body = sections.get("project", "").strip().split("\n")[0]
+    return body, signature
+
+
+def _extract_proof(sections: dict[str, str], company_name: str) -> dict[str, Any]:
+    """Geen verzonnen klantreviews. We tonen merkbeloften/signature-citaten van
+    de eigenaar zelf, expliciet als zodanig gelabeld."""
+    body_section = sections.get("behoud uit huidige site", "")
+    items: list[dict[str, str]] = []
+    for line in body_section.splitlines():
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        match = re.search(r'"([^"]+)"', line)
+        if not match:
+            continue
+        quote = _clean_dashes(match.group(1)).strip()
+        if len(quote) < 25 or len(quote) > 220:
+            continue
+        items.append({
+            "quote": quote,
+            "attribution": f"Beloften van {company_name}",
+        })
+        if len(items) == 3:
+            break
+    return {
+        "title": "Onze beloften aan jou",
+        "items": items,
+        "note": "Klantreviews worden door de eigenaar aangeleverd na livegang en zijn nog niet zichtbaar.",
+    }
+
+
+_DUTCH_ADDRESS_RE = re.compile(
+    r"([A-Z][\w'.\- ]+?\s+\d+[A-Za-z]?(?:\s?-\s?\d+)?),?\s+(\d{4}\s?[A-Z]{2})\s+([A-Z][\w'.\- ]+)"
+)
+
+
+def _format_phone(phone: str) -> str:
+    """Maak een NL-mobiel leesbaarder: +31680052875 -> +31 6 8005 2875."""
+    digits = re.sub(r"\D", "", phone)
+    if not digits:
+        return phone
+    if digits.startswith("31") and len(digits) == 11:
+        return f"+31 {digits[2]} {digits[3:7]} {digits[7:]}"
+    if digits.startswith("0") and len(digits) == 10:
+        return f"{digits[:2]} {digits[2:6]} {digits[6:]}"
+    return phone
+
+
+def _extract_contact(structured: dict[str, Any], briefing: str) -> dict[str, str]:
+    contact_raw = structured.get("contact", {}) if isinstance(structured.get("contact"), dict) else {}
+    phone = contact_raw.get("phone", "").strip()
+    email = contact_raw.get("email", "").strip()
+    address_raw = contact_raw.get("address", "").strip()
+    # Eerst: zoek expliciet naar straat-nummer + postcode + plaats in raw én briefing.
+    address = ""
+    for source in (address_raw, briefing):
+        match = _DUTCH_ADDRESS_RE.search(source)
+        if match:
+            address = f"{match.group(1).strip()}, {match.group(2).strip()} {match.group(3).strip()}"
+            break
+    # Fallback: strip telefoon/email uit raw als we geen schone match hadden.
+    if not address and address_raw:
+        cleaned = re.sub(r"\(\+\d+\)[^,]*", "", address_raw)
+        cleaned = re.sub(r"[^@\s]+@[^\s]+", "", cleaned).strip(" ,")
+        if cleaned:
+            address = cleaned
+    return {
+        "phone": phone,
+        "phone_display": _format_phone(phone) if phone else "",
+        "email": email,
+        "address": address,
+    }
+
+
+def _extract_theme(briefing: str, sections: dict[str, str]) -> dict[str, str]:
+    design = sections.get("designrichting", briefing)
+    colors = _HEX_RE.findall(design)
+    return {
+        "primary": colors[0] if len(colors) > 0 else "#b8936a",
+        "primary_dark": "#8d6e4f",
+        "secondary": "#2c2c2c",
+        "accent": colors[1] if len(colors) > 1 else "#f5ede3",
+        "background": colors[2] if len(colors) > 2 else "#faf8f5",
+        "text": "#2c2c2c",
+    }
+
+
+def _extract_pages(collected_path: Path) -> list[dict[str, Any]]:
+    import json
+    pages_path = collected_path / "pages.json"
+    pages: list[dict[str, Any]] = [{"slug": "", "title": "Home", "in_nav": True}]
+    if pages_path.exists():
+        try:
+            data = json.loads(pages_path.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        for item in (data.get("pages") or [])[:6]:
+            file_name = str(item.get("file", ""))
+            slug = file_name.replace(".html", "").strip("/").lower()
+            if slug in {"", "index", "home", "legal", "algemene-voorwaarden", "privacy-verklaring"}:
+                continue
+            pages.append({
+                "slug": slug,
+                "title": item.get("title") or slug.replace("-", " ").capitalize(),
+                "description": item.get("description", ""),
+                "in_nav": True,
+            })
+    if len(pages) == 1:
+        for slug, title in [("behandelingen", "Behandelingen"), ("over-ons", "Over ons"), ("contact", "Contact")]:
+            pages.append({"slug": slug, "title": title, "description": "", "in_nav": True})
+    return pages[:6]
+
+
+# Cosmetische category-aliases voor de tarievenpagina. Inventory levert ruwe
+# kop-strings uit text.txt; deze map brengt ze naar mooiere kopjes voor render.
+_PRICE_CATEGORY_ALIASES: dict[str, str] = {
+    "Tarieven tijdens een gezichtsbehandeling": "Tijdens een gezichtsbehandeling",
+    "Harsen & Verven": "Harsen en verven",
+    "Behandelingen": "Tarieven",
+    "Overig": "Overige tarieven",
+}
+
+
+def _format_amount(amount: str) -> str:
+    return amount.replace("€ ", "€").strip()
+
+
+def _parse_amount(amount: str) -> float:
+    """Parse '€36,50' / '€100,50' / '€11' naar float voor sortering."""
+    digits = re.sub(r"[^\d,.]", "", amount).replace(",", ".")
+    try:
+        return float(digits)
+    except ValueError:
+        return 0.0
+
+
+def _inventory_to_services(
+    inventory: ContentInventory,
+    price_groups: list[dict[str, Any]],
+    max_cards: int = 4,
+) -> list[dict[str, Any]]:
+    """Bouw service-cards uit echte inventory-data.
+
+    Strategie:
+      - Multi-categorie: per categorie 1 representatieve behandeling (de duurste,
+        gezien als 'signature' aanbod), beschrijving toont aantal + range.
+      - Single-category: top behandelingen op prijs.
+      - Geen prijzen: val terug op de hardcoded service-categorieën.
+    """
+    if not price_groups:
+        return _extract_services("")  # leverage default
+
+    multi = len(price_groups) > 1
+    cards: list[dict[str, Any]] = []
+
+    if multi:
+        for group in price_groups[:max_cards]:
+            items = group.get("items") or []
+            if not items:
+                continue
+            # Kies 'signature' als de duurste, met fallback op laatste item.
+            sorted_items = sorted(items, key=lambda i: _parse_amount(i.get("price", "")), reverse=True)
+            head = sorted_items[0]
+            n = len(items)
+            min_price = min((_parse_amount(i.get("price", "")) for i in items), default=0)
+            min_str = next(
+                (i.get("price") for i in items if _parse_amount(i.get("price", "")) == min_price),
+                "",
+            )
+            description = (
+                f"{n} behandeling{'en' if n != 1 else ''}, vanaf {min_str}. "
+                f"Bekend als signature: {head.get('label','')}."
+            )
+            cards.append({
+                "key": group["title"].lower().replace(" ", "-"),
+                "title": group["title"],
+                "description": description,
+                "href": "/tarieven/",
+            })
+    else:
+        # Single category: pak de eerste N items in bron-volgorde.
+        # 'Top op prijs' faalt voor kapsalons (duurste = keratine-extensies, niet
+        # signature). De bron volgt vrijwel altijd belangrijkste-eerst.
+        items = price_groups[0].get("items") or []
+        for entry in items[:max_cards]:
+            label = entry.get("label", "")
+            cards.append({
+                "key": label.lower().replace(" ", "-"),
+                "title": label,
+                "description": f"Vanaf {entry.get('price','')} — onderdeel van het volledige behandelaanbod.",
+                "href": "/tarieven/",
+            })
+
+    if not cards:
+        return _extract_services("")
+    return cards
+
+
+def _inventory_prices_to_groups(inventory: ContentInventory) -> list[dict[str, Any]]:
+    """Map ContentInventory.prices naar de groups-shape die PriceList.astro leest.
+
+    Output:
+        [
+          {"title": "Gezichtsverzorging",
+           "items": [{"label": "Mini facial treatment (30 min)", "price": "€36,50"}, ...]},
+          ...
+        ]
+    """
+    grouped: dict[str, list[dict[str, str]]] = {}
+    order: list[str] = []
+    for item in inventory.prices:
+        category = item.category or "Overig"
+        if category not in grouped:
+            grouped[category] = []
+            order.append(category)
+        # Normaliseer bedrag: zorg dat we altijd '€<bedrag>' renderen, ook als
+        # de bron '€ 36,50' had (spatie ertussen).
+        amount = item.amount.replace("€ ", "€").strip()
+        grouped[category].append({"label": item.label, "price": amount})
+    return [
+        {
+            "title": _PRICE_CATEGORY_ALIASES.get(cat, cat),
+            "items": grouped[cat],
+        }
+        for cat in order
+    ]
+
+
+_PRICE_RE = re.compile(r"^(?P<label>.+?)\s+(?P<price>€\s?\d+(?:,\d{1,2})?)\.?$")
+
+
+def _normalise_price_line(line: str) -> str:
+    line = line.replace("\xa0", " ")
+    line = re.sub(r"\s+", " ", line).strip()
+    line = re.sub(r"^vanaf 1 jan\s+", "", line, flags=re.IGNORECASE)
+    return line.strip(" .")
+
+
+def _extract_price_groups(source_text: str) -> list[dict[str, Any]]:
+    """Haal echte tariefregels uit de crawl-tekst, gegroepeerd per kop."""
+    aliases = {
+        "Gezichtsverzorging": "Gezichtsverzorging",
+        "Harsen & Verven": "Harsen en verven",
+        "Massages": "Massages",
+        "Tarieven tijdens een gezichtsbehandeling": "Tijdens een gezichtsbehandeling",
+    }
+    groups: list[dict[str, Any]] = []
+    current_title: str | None = None
+    current_items: list[dict[str, str]] = []
+
+    def flush() -> None:
+        nonlocal current_title, current_items
+        if current_title and current_items:
+            groups.append({"title": current_title, "items": current_items})
+        current_title = None
+        current_items = []
+
+    for raw_line in source_text.splitlines():
+        line = _normalise_price_line(raw_line)
+        if not line:
+            continue
+        if line.startswith("===") or line.startswith("(+31)") or line.startswith("©"):
+            flush()
+            current_title = None
+            continue
+        if line in aliases:
+            flush()
+            current_title = aliases[line]
+            continue
+        if current_title is None:
+            continue
+        if line.lower().startswith("let op"):
+            flush()
+            current_title = "Losse behandelingen"
+            continue
+        if line.lower().startswith(("wil je", "deze losse", "of via", "info@")):
+            continue
+        match = _PRICE_RE.match(line)
+        if not match:
+            continue
+        label = match.group("label").strip()
+        price = match.group("price").replace("€ ", "€").strip()
+        if label and price:
+            current_items.append({"label": label, "price": price})
+
+    flush()
+    return groups
+
+
+def _between(text: str, start: str, end: str | None = None) -> str:
+    start_index = text.find(start)
+    if start_index < 0:
+        return ""
+    content_start = start_index + len(start)
+    if not end:
+        return text[content_start:].strip()
+    end_index = text.find(end, content_start)
+    if end_index < 0:
+        return text[content_start:].strip()
+    return text[content_start:end_index].strip()
+
+
+def _extract_treatments(source_text: str) -> list[dict[str, Any]]:
+    """Maak compacte behandelkaarten uit de originele crawl-tekst."""
+    specs = [
+        (
+            "Botanical Beauty 60 min treatment",
+            "Botanical Beauty 75 min treatment",
+            "60 minuten",
+            "€67",
+        ),
+        (
+            "Botanical Beauty 75 min treatment",
+            "Botanical Beauty 90 min treatment",
+            "75 minuten",
+            "€80",
+        ),
+        (
+            "Botanical Beauty 90 min treatment",
+            "Wellness massages",
+            "90 minuten",
+            "€100,50",
+        ),
+    ]
+    treatments: list[dict[str, Any]] = []
+    for title, end_marker, duration, price in specs:
+        block = _between(source_text, title, end_marker)
+        if not block:
+            continue
+        lines = [_normalise_price_line(line) for line in block.splitlines()]
+        lines = [line for line in lines if line and line not in {"Vaste onderdelen van deze gezichtsbehandeling zijn:"}]
+        intro = next((line for line in lines if not line.startswith("*") and "kost €" not in line), "")
+        items = [line.lstrip("* ").strip() for line in lines if line.startswith("*")]
+        treatments.append({
+            "title": title,
+            "duration": duration,
+            "price": price,
+            "body": intro or "Een gezichtsbehandeling met vaste verzorgingsrituelen uit de originele website.",
+            "items": items,
+        })
+
+    massage_block = _between(source_text, "Wellness massages", "Lash Volume Lifting")
+    if massage_block:
+        lines = [_normalise_price_line(line) for line in massage_block.splitlines() if _normalise_price_line(line)]
+        treatments.append({
+            "title": "Wellness massages",
+            "duration": "30 of 50 minuten",
+            "price": "€36 / €54",
+            "body": " ".join(lines[:2]),
+            "items": [
+                "30 minuten: rug, nek en schouders",
+                "50 minuten: gehele achterzijde van het lichaam",
+                "Gericht op ontspanning en het losmaken van pijnlijke spierknopen",
+            ],
+        })
+
+    lash_block = _between(source_text, "Lash Volume Lifting", "Harsen & Verven")
+    if lash_block:
+        lines = [_normalise_price_line(line) for line in lash_block.splitlines() if _normalise_price_line(line)]
+        body = " ".join(lines[:3])
+        items = [
+            "Eigen wimpers lijken langer en ogen lijken groter",
+            "Resultaat 6 tot 8 weken zichtbaar",
+            "Met verven van de wimpers als onderdeel van de behandeling",
+        ]
+        treatments.append({
+            "title": "Lash Volume Lifting",
+            "duration": "6 tot 8 weken resultaat",
+            "price": "€52",
+            "body": body,
+            "items": items,
+        })
+
+    return treatments
+
+
+def _extract_product_story(source_text: str, briefing: str) -> dict[str, Any]:
+    haystack = f"{source_text}\n{briefing}"
+    if "Botanical Beauty" not in haystack:
+        return {}
+    return {
+        "title": "Botanical Beauty",
+        "lead": "De salon werkt met Botanical Beauty: een natuurlijke en biologische productlijn voor huidverzorging.",
+        "body": "De behandelingen worden afgestemd op wat jouw huid op dat moment nodig heeft. In de originele site komt Botanical Beauty terug als basis voor de gezichtsbehandelingen en als bewuste keuze voor natuurlijke verzorging.",
+        "bullets": [
+            "100% natuurlijke en biologische productlijn",
+            "Gebruikt bij de Botanical Beauty gezichtsbehandelingen",
+            "Productkeuze per behandeling afgestemd op de huid",
+        ],
+    }
+
+
+def _decorate_pages(
+    pages: list[dict[str, Any]],
+    services: list[dict[str, Any]],
+    company_name: str,
+    contact: dict[str, str],
+    price_groups: list[dict[str, Any]],
+    treatments: list[dict[str, Any]],
+    products: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Maak subpagina's inhoudelijk verschillend zonder runtime codegeneratie."""
+    service_titles = [service.get("title", "Behandeling") for service in services]
+    first_services = service_titles[:4] or ["persoonlijke behandeling"]
+
+    for page in pages:
+        slug = page.get("slug", "")
+        if not slug:
+            page["sections"] = ["services", "about", "gallery", "reviews", "openingHours", "contactCta"]
+            continue
+
+        title = page.get("title") or slug.replace("-", " ").title()
+        lower = f"{slug} {title}".lower()
+
+        if any(word in lower for word in ("behandeling", "diensten", "service")):
+            page["sections"] = ["pageContent", "treatments", "services", "gallery", "contactCta"]
+            page["content"] = {
+                "eyebrow": "Behandelingen",
+                "title": title,
+                "lead": page.get("description") or "Kies de behandeling die past bij jouw huid, wensen en moment.",
+                "body": "Deze pagina gebruikt de behandelteksten uit de originele website, inclusief duur, vaste onderdelen en bekende tarieven.",
+                "bullets": [f"{name} met aandacht voor jouw wensen" for name in first_services],
+                "note": "Twijfel je welke behandeling past? Bel of WhatsApp, dan denken we even met je mee.",
+            }
+        elif any(word in lower for word in ("tarief", "tarieven", "prijs", "prijzen", "prijslijst")):
+            page["sections"] = ["pageContent", "prices", "contactCta"]
+            n_items = sum(len(group.get("items", [])) for group in price_groups)
+            n_categories = len(price_groups)
+            page["content"] = {
+                "eyebrow": "Tarieven",
+                "title": title,
+                "lead": page.get("description") or "Heldere prijzen, geen verrassingen.",
+                "body": "Hieronder vind je per categorie de actuele tarieven. Vraag bij twijfel altijd vooraf naar wat de behandeling voor jou kost — we plannen genoeg tijd in en denken graag mee.",
+                "bullets": [
+                    f"Verdeeld over {n_categories} categorieën" if n_categories > 1 else f"{n_items} behandelingen op één plek",
+                    "Vaste prijs per behandeling, geen verborgen kosten",
+                    "Combineer losse behandelingen met een gezichtsbehandeling voor korting",
+                ],
+                "note": "",
+            }
+        elif any(word in lower for word in ("product", "merk", "shop")):
+            page["sections"] = ["pageContent", "products", "gallery", "contactCta"]
+            page["content"] = {
+                "eyebrow": "Producten",
+                "title": title,
+                "lead": page.get("description") or products.get("lead") or "Productadvies dat past bij jouw huid en routine.",
+                "body": products.get("body") or "Deze pagina gebruikt alleen productnamen en productclaims die in de crawl of briefing gevonden zijn.",
+                "bullets": products.get("bullets") or ["Advies op basis van jouw huid en wensen"],
+                "note": "Productclaims blijven bewust beperkt tot wat in de originele bron is gevonden.",
+            }
+        elif any(word in lower for word in ("over", "mij", "ons", "salon")):
+            page["sections"] = ["pageContent", "about", "reviews", "contactCta"]
+            page["content"] = {
+                "eyebrow": "Persoonlijk",
+                "title": title,
+                "lead": page.get("description") or f"Maak kennis met {company_name}.",
+                "body": "Een beauty/wellness-site verkoopt vertrouwen. Deze pagina geeft ruimte aan het verhaal van de behandelaar, de sfeer in de salon en de manier van werken.",
+                "bullets": [
+                    "Persoonlijke aandacht in een rustige setting",
+                    "Een herkenbaar verhaal in de woorden van de salon",
+                    "Geen verzonnen reviews of claims",
+                ],
+                "note": "Aanvullen met extra eigenaarstekst zodra die beschikbaar is.",
+            }
+        elif "contact" in lower:
+            address = contact.get("address") or "Adres wordt bevestigd door de eigenaar"
+            phone = contact.get("phone_display") or contact.get("phone") or "Telefoonnummer wordt bevestigd"
+            page["sections"] = ["pageContent", "openingHours", "contactCta"]
+            page["content"] = {
+                "eyebrow": "Contact",
+                "title": title,
+                "lead": page.get("description") or "Plan je afspraak of stel je vraag direct.",
+                "body": "Gebruik deze pagina voor de praktische contactgegevens, afspraakroute en bereikbaarheid.",
+                "bullets": [
+                    f"Adres: {address}",
+                    f"Telefoon: {phone}",
+                    "WhatsApp is beschikbaar als er een mobiel nummer is gevonden",
+                ],
+                "note": "Openingstijden worden niet verzonnen; bij twijfel tonen we afspraak op aanvraag.",
+            }
+        else:
+            page["sections"] = ["pageContent", "services", "contactCta"]
+            page["content"] = {
+                "eyebrow": "Informatie",
+                "title": title,
+                "lead": page.get("description") or f"Meer over {title.lower()}.",
+                "body": "Deze pagina gebruikt eigen content uit de briefing zodra die beschikbaar is. Tot die tijd blijft de tekst bewust compact en eerlijk.",
+                "bullets": [
+                    "Heldere informatie zonder verzonnen claims",
+                    "Aansluitend op de bestaande briefing",
+                    "Met een directe route naar contact",
+                ],
+                "note": "Deze pagina kan later worden verdiept met extra eigenaarstekst.",
+            }
+
+    # Inventory-data mag niet in de site verloren gaan: als prices bestaan maar
+    # geen pagina ze rendert (bv. kapsalon zonder /tarieven/-slug), hang ze op
+    # de meest logische bestaande pagina.
+    if price_groups:
+        renders_prices = any("prices" in (p.get("sections") or []) for p in pages)
+        if not renders_prices:
+            target = None
+            preferred = ("behandel", "knippen", "kleuren", "service", "diensten", "tarief")
+            for p in pages:
+                slug = (p.get("slug") or "").lower()
+                title = (p.get("title") or "").lower()
+                if any(w in f"{slug} {title}" for w in preferred):
+                    target = p
+                    break
+            if target is None:
+                target = next((p for p in pages if not p.get("slug")), None)
+            if target is not None:
+                sections = list(target.get("sections") or [])
+                insert_at = sections.index("pageContent") + 1 if "pageContent" in sections else 0
+                sections.insert(insert_at, "prices")
+                target["sections"] = sections
+
+    return pages
+
+
+# ── Asset selectie ───────────────────────────────────────────────────────────
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _find_assets(collected_path: Path) -> list[Path]:
+    """Vind alle bruikbare bitmap-foto's onder collected/assets, gesorteerd."""
+    assets_dir = collected_path / "assets"
+    if not assets_dir.exists():
+        return []
+    images: list[Path] = []
+    for path in assets_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in _IMAGE_SUFFIXES:
+            continue
+        rel = str(path.relative_to(assets_dir)).replace("\\", "/")
+        if any(pattern.search(rel) for pattern in _GALLERY_BLOCKLIST):
+            continue
+        images.append(path)
+    return sorted(images)
+
+
+def _pick_first(images: list[Path], patterns: list[re.Pattern[str]]) -> Path | None:
+    for pattern in patterns:
+        for image in images:
+            if pattern.search(image.name) or pattern.search(str(image)):
+                return image
+    return None
+
+
+def _pick_gallery(images: list[Path], exclude: set[Path], limit: int = 8) -> list[Path]:
+    selected: list[Path] = []
+    seen: set[str] = set()
+    # Eerst voorkeurspatronen
+    for pattern in _GALLERY_PATTERNS_PREFER:
+        for image in images:
+            if image in exclude or image.name in seen:
+                continue
+            if pattern.search(image.name):
+                selected.append(image)
+                seen.add(image.name)
+                if len(selected) >= limit:
+                    return selected
+    # Fallback: vul aan met overige assets
+    for image in images:
+        if image in exclude or image.name in seen:
+            continue
+        selected.append(image)
+        seen.add(image.name)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+# ── Beauty/Wellness Archetype ────────────────────────────────────────────────
+# Quality contract: wat moet de inventory aanleveren voordat we mogen bouwen?
+# Geen LLM, alleen deterministische checks (zie v2/pipeline/quality_gate.py).
+_BEAUTY_WELLNESS_CONTRACT: list[FieldCheck] = [
+    FieldCheck(
+        field="contact.phone",
+        rule="required",
+        severity="fail",
+        rationale="Lokale salon zonder bel-CTA verliest direct conversies",
+    ),
+    FieldCheck(
+        field="contact.address",
+        rule="recommended",
+        severity="warn",
+        rationale="Adres is vereist voor lokale SEO + Google Maps embed",
+    ),
+    FieldCheck(
+        field="treatments",
+        rule="min_count",
+        severity="fail",
+        min_count=3,
+        rationale="Beauty/wellness archetype gaat over behandelingen — minder dan 3 wijst op extractie-falen",
+    ),
+    FieldCheck(
+        field="prices",
+        rule="required_if_evidence",
+        severity="fail",
+        evidence_pattern=r"€\s?\d|\b\d+,\d{2}\s*€",
+        rationale="Als de bron €-bedragen bevat, móét /tarieven/ ze tonen — anders is de site een downgrade",
+    ),
+    FieldCheck(
+        field="opening_hours",
+        rule="required_if_evidence",
+        severity="warn",
+        evidence_pattern=r"(?im)\b(?:maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)\b.{0,40}\d{1,2}[:.]\d{2}",
+        rationale="Bron noemt openingstijden — extractor heeft ze gemist",
+    ),
+    FieldCheck(
+        field="reviews",
+        rule="required_if_evidence",
+        severity="warn",
+        # \b voorkomt match in compound tokens als 'testimonials_photo' (de
+        # WordPress widget-placeholder die we juist NIET als evidence willen).
+        evidence_pattern=r"(?i)\b(?:review|testimonial|aanrader|tevreden klant|geweldige? ervaring)\b",
+        rationale="Bron suggereert reviews — controleer of inventory ze terecht overslaat",
+    ),
+    FieldCheck(
+        field="images",
+        rule="min_count",
+        severity="warn",
+        min_count=5,
+        rationale="Beauty-site zonder voldoende sfeerfoto's voelt leeg",
+    ),
+    FieldCheck(
+        field="pages",
+        rule="min_count",
+        severity="warn",
+        min_count=3,
+        rationale="Minder dan 3 pagina's wijst op een onvolledige crawl",
+    ),
+]
+
+
+class BeautyWellnessArchetype:
+    name = "beauty_wellness"
+    template_dir_name = "beauty_wellness"
+
+    def get_contract(self) -> list[FieldCheck]:
+        return list(_BEAUTY_WELLNESS_CONTRACT)
+
+    def detect(
+        self,
+        briefing: str,
+        structured: dict[str, Any],
+        meta: dict[str, Any],
+    ) -> ArchetypeMatch:
+        haystack_parts: list[str] = [briefing.lower()]
+        nav = structured.get("nav") or []
+        if isinstance(nav, list):
+            haystack_parts.append(" ".join(str(item).lower() for item in nav))
+        title = (meta.get("title") or "").lower()
+        haystack_parts.append(title)
+        haystack = "\n".join(haystack_parts)
+
+        score = 0.0
+        reasons: list[str] = []
+        for keyword in _HEAVY_KEYWORDS:
+            if keyword in haystack:
+                score += 1.0
+                reasons.append(f"heavy keyword: {keyword}")
+        for keyword in _LIGHT_KEYWORDS:
+            if keyword in haystack:
+                score += 0.4
+                reasons.append(f"light keyword: {keyword}")
+        return ArchetypeMatch(score=score, reasons=reasons[:8])
+
+    def build_plan(
+        self,
+        slug: str,
+        collected_path: Path,
+        briefing: str,
+        structured: dict[str, Any],
+        meta: dict[str, Any],
+        inventory: ContentInventory | None = None,
+    ) -> dict[str, Any]:
+        sections = _split_sections(briefing)
+        source_text_path = collected_path / "text.txt"
+        source_text = source_text_path.read_text(encoding="utf-8", errors="ignore") if source_text_path.exists() else ""
+        # Inventory is single source of truth voor feiten (prijzen, behandelingen,
+        # contact, ...). Kan vooraf gebouwd zijn door de gate; anders nu opbouwen.
+        if inventory is None:
+            inventory = build_inventory(slug, collected_path)
+        company_name = meta.get("company_name") or structured.get("title") or meta.get("title") or slug.replace("-", " ").title()
+        company_name = re.sub(r"\s+[Vv]\d+$", "", company_name).strip()
+        # Inventory wint van de oude extractor: hij valt ook text.txt mee terug.
+        inv_contact = inventory.contact
+        contact = {
+            "phone": inv_contact.phone,
+            "phone_display": inv_contact.phone_display,
+            "email": inv_contact.email,
+            "address": inv_contact.address,
+        }
+        # Voor backwards compat met _extract_contact-callers (legacy):
+        if not contact["phone"] or not contact["address"]:
+            legacy = _extract_contact(structured, briefing)
+            for key, value in legacy.items():
+                if not contact.get(key):
+                    contact[key] = value
+        social_raw = structured.get("social_links", {}) if isinstance(structured.get("social_links"), dict) else {}
+        whatsapp_url = ""
+        if contact.get("phone"):
+            digits = re.sub(r"\D", "", contact["phone"])
+            if digits:
+                whatsapp_url = f"https://wa.me/{digits}"
+        social = {
+            "facebook": social_raw.get("facebook", ""),
+            "instagram": social_raw.get("instagram", ""),
+            "whatsapp": whatsapp_url,
+        }
+
+        # Bron-of-truth voor tarieven is nu de inventory (incl. provenance).
+        # _extract_price_groups blijft voorlopig staan voor backwards-compat /
+        # vergelijkings-debug; de inventory-mapping wint.
+        price_groups = _inventory_prices_to_groups(inventory)
+        # Service-cards komen uit echte inventory-data wanneer beschikbaar;
+        # anders fallback op de generieke 4-categorie-lijst uit de briefing.
+        services = _inventory_to_services(inventory, price_groups)
+        treatments = _extract_treatments(source_text)
+        products = _extract_product_story(source_text, briefing)
+        signature = _extract_signature(sections)
+        about_body, about_signature = _extract_about_quotes(sections)
+        if not about_body:
+            about_body = sections.get("project", "").splitlines()[0] if sections.get("project") else company_name
+
+        # Hero copy uit briefing eerste project-bullet, anders signature.
+        project_lines = _bullet_lines(sections.get("project", ""))
+        hero_body = ""
+        if signature:
+            hero_body = signature
+        elif project_lines:
+            hero_body = _clean_dashes(project_lines[0])
+
+        location = ""
+        for line in project_lines:
+            if re.search(r"\d{4}\s?[A-Z]{2}", line):
+                parts = line.split(",")
+                if len(parts) >= 2:
+                    location = parts[-1].strip().split(" ")[-1]
+                break
+
+        eyebrow = "Beauty en wellness"
+        if location:
+            eyebrow = f"Beautysalon, {location}"
+
+        pages = _decorate_pages(
+            _extract_pages(collected_path),
+            services,
+            company_name,
+            contact,
+            price_groups,
+            treatments,
+            products,
+        )
+
+        plan: dict[str, Any] = {
+            "archetype": self.name,
+            "slug": slug,
+            "company_name": company_name,
+            "tagline": meta.get("description") or structured.get("meta_tags", {}).get("description", ""),
+            "source_url": meta.get("url", ""),
+            "logo": "",
+            "theme": _extract_theme(briefing, sections),
+            "contact": contact,
+            "social": social,
+            "pages": pages,
+            "headings": {
+                "services": {"eyebrow": "Behandelingen", "title": "Wat ik voor je doe"},
+                "gallery":  {"eyebrow": "Sfeer",         "title": "Even rondkijken in de salon"},
+                "reviews":  {"eyebrow": "Vertrouwen",    "title": "Hoe ik werk"},
+                "openingHours": {"eyebrow": "Plannen",   "title": "Wanneer je terecht kunt"},
+                "about":    {"eyebrow": "Persoonlijk",   "title": f"Over {company_name}"},
+            },
+            "hero": {
+                "eyebrow": eyebrow,
+                "headline": company_name,
+                "body": hero_body,
+                "image": "",
+                "primaryCta": {"label": "Online reserveren", "href": "#contact"},
+                "secondaryCta": {"label": "Bekijk behandelingen", "href": "#diensten"},
+                "meta": [
+                    {"label": "Persoonlijk", "value": "altijd één behandelaar"},
+                    {"label": "Locatie",     "value": location or "in de regio"},
+                    {"label": "Plannen",     "value": "telefoon of WhatsApp"},
+                ],
+            },
+            "services": services,
+            "prices": {
+                "title": "Tarieven",
+                "groups": price_groups,
+                "note": "Bedragen zijn richtprijzen, je hoort vooraf de exacte prijs voor jouw behandeling.",
+            },
+            "treatments": treatments,
+            "products": products,
+            "gallery": [],
+            "reviews": _extract_proof(sections, company_name),
+            "openingHours": {
+                "items": [],
+                "fallback": "Openingstijden gaan op afspraak. Bel of WhatsApp ons direct, dan plannen we samen een moment in.",
+            },
+            "about": {
+                "title": f"Over {company_name}",
+                "body": _clean_dashes(about_body),
+                "signature": about_signature,
+                "image": "",
+            },
+            "contactCta": {
+                "title": "Klaar voor je verwenmoment?",
+                "body": "Plan vandaag nog je behandeling, dan reserveren we tijd alleen voor jou.",
+                "primary":   {"label": "Online reserveren", "href": "#contact"},
+                "secondary": {"label": "Bel ons direct",    "href": f"tel:{contact['phone']}" if contact.get("phone") else "#"},
+                "tertiary":  {"label": "App ons via WhatsApp", "href": whatsapp_url} if whatsapp_url else None,
+            },
+        }
+        if not plan["contactCta"]["tertiary"]:
+            plan["contactCta"].pop("tertiary")
+        return plan
+
+    def render(self, plan: dict[str, Any], collected_path: Path, out_dir: Path, force: bool = False) -> None:
+        # Late import om circulaire imports te voorkomen wanneer __init__ geladen wordt.
+        from v2.generators.astro.render_archetype import render_archetype_site
+
+        render_archetype_site(
+            template_dir_name=self.template_dir_name,
+            plan=plan,
+            collected_path=collected_path,
+            out_dir=out_dir,
+            force=force,
+            asset_picker=_pick_archetype_assets,
+        )
+
+
+def _pick_archetype_assets(collected_path: Path, plan: dict[str, Any]) -> dict[str, Any]:
+    """Selecteer en bepaal welke afbeeldingen waar gebruikt worden.
+
+    Geeft een dict terug met:
+    - copies: lijst van (src_abs, dst_rel) tuples voor copy-naar-public
+    - plan_patches: dict met velden in plan die geüpdatet moeten worden met
+      relatieve URL's (bv. logo, hero.image, about.image, gallery, services[i].image)
+    """
+    images = _find_assets(collected_path)
+    copies: list[tuple[Path, str]] = []
+    patches: dict[str, Any] = {}
+
+    # Logo: collected_path/logo.* heeft prioriteit.
+    logo_src: Path | None = None
+    for candidate in collected_path.glob("logo.*"):
+        if candidate.suffix.lower() in _IMAGE_SUFFIXES:
+            logo_src = candidate
+            break
+    if logo_src:
+        dst = f"assets/logo{logo_src.suffix.lower()}"
+        copies.append((logo_src, dst))
+        patches["logo"] = f"/{dst}"
+
+    used: set[Path] = set()
+
+    hero_src = _pick_first(images, _HERO_PATTERNS)
+    if hero_src:
+        dst = f"assets/hero{hero_src.suffix.lower()}"
+        copies.append((hero_src, dst))
+        patches["hero_image"] = f"/{dst}"
+        used.add(hero_src)
+
+    about_src = _pick_first(images, _PORTRAIT_PATTERNS)
+    if about_src and about_src != hero_src:
+        dst = f"assets/about{about_src.suffix.lower()}"
+        copies.append((about_src, dst))
+        patches["about_image"] = f"/{dst}"
+        used.add(about_src)
+
+    # Service-fotos: een per service, op patroon-volgorde.
+    service_image_pool = [img for img in images if img not in used]
+    service_assignments: list[str] = []
+    for index, _service in enumerate(plan.get("services", [])):
+        if index >= len(service_image_pool):
+            service_assignments.append("")
+            continue
+        src = service_image_pool[index]
+        dst = f"assets/services/service-{index + 1}{src.suffix.lower()}"
+        copies.append((src, dst))
+        service_assignments.append(f"/{dst}")
+        used.add(src)
+    patches["service_images"] = service_assignments
+
+    gallery_picks = _pick_gallery(images, used, limit=8)
+    gallery_entries: list[dict[str, str]] = []
+    for index, src in enumerate(gallery_picks):
+        dst = f"assets/gallery/photo-{index + 1}{src.suffix.lower()}"
+        copies.append((src, dst))
+        gallery_entries.append({"src": f"/{dst}", "alt": f"Sfeerfoto {index + 1}"})
+    patches["gallery"] = gallery_entries
+
+    return {"copies": copies, "patches": patches}

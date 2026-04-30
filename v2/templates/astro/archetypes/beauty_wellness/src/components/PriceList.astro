@@ -1,0 +1,41 @@
+---
+const { prices, suppressHeading = true, eyebrow = "Per categorie", maxPerGroup = 12 } = Astro.props;
+const groups = prices?.groups || [];
+if (!groups.length) return null;
+---
+<section class="section detail-section">
+  <div class="container">
+    {suppressHeading ? (
+      <div class="section-eyebrow price-eyebrow">{eyebrow}</div>
+    ) : (
+      <div class="detail-heading">
+        <div class="section-eyebrow">{eyebrow}</div>
+        <h2>{prices.title || "Tarieven"}</h2>
+      </div>
+    )}
+    <div class="price-grid">
+      {groups.map((group) => {
+        const items = group.items || [];
+        const visible = items.slice(0, maxPerGroup);
+        const overflow = items.length - visible.length;
+        return (
+          <section class="price-group">
+            <h3>{group.title}</h3>
+            <ul>
+              {visible.map((item) => (
+                <li>
+                  <span>{item.label}</span>
+                  <strong>{item.price}</strong>
+                </li>
+              ))}
+            </ul>
+            {overflow > 0 && (
+              <p class="price-overflow">+ {overflow} {overflow === 1 ? "behandeling" : "behandelingen"} in de salon</p>
+            )}
+          </section>
+        );
+      })}
+    </div>
+    {prices.note && <p class="detail-note">{prices.note}</p>}
+  </div>
+</section>

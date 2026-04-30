@@ -1,0 +1,36 @@
+---
+const { hero, sitePlan } = Astro.props;
+if (!hero) return null;
+const eyebrow = hero.eyebrow;
+const headline = hero.headline || sitePlan.company_name;
+const body = hero.body;
+const image = hero.image;
+const primary = hero.primaryCta;
+const secondary = hero.secondaryCta;
+const meta = hero.meta || [];
+---
+<section class="hero">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      {eyebrow && <span class="hero-eyebrow">{eyebrow}</span>}
+      <h1 class="hero-title">{headline}</h1>
+      {body && <p class="hero-lead">{body}</p>}
+      <div class="hero-actions">
+        {primary && <a class="btn btn-primary" href={primary.href}>{primary.label}</a>}
+        {secondary && <a class="btn btn-outline" href={secondary.href}>{secondary.label}</a>}
+      </div>
+      {meta.length > 0 && (
+        <div class="hero-meta">
+          {meta.map((item) => (
+            <span><strong>{item.label}</strong> {item.value}</span>
+          ))}
+        </div>
+      )}
+    </div>
+    {image && (
+      <div class="hero-visual">
+        <img src={image} alt={`${sitePlan.company_name} sfeerbeeld`} loading="eager" />
+      </div>
+    )}
+  </div>
+</section>

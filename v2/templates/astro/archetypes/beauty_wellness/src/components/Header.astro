@@ -1,0 +1,23 @@
+---
+import sitePlan from "../data/sitePlan.json";
+const navPages = (sitePlan.pages || []).filter((p) => p.in_nav !== false);
+const primaryCta = sitePlan.hero?.primaryCta;
+const phone = sitePlan.contact?.phone;
+---
+<header class="site-header">
+  <nav class="container nav" aria-label="Hoofdnavigatie">
+    <a class="brand" href="/">
+      {sitePlan.logo && <img src={sitePlan.logo} alt={`${sitePlan.company_name} logo`} loading="eager" />}
+      <span>{sitePlan.company_name}</span>
+    </a>
+    <div class="nav-links">
+      {navPages.map((page) => (
+        <a class="nav-link" href={page.slug ? `/${page.slug}/` : "/"}>{page.title}</a>
+      ))}
+    </div>
+    <div class="nav-cta">
+      {phone && <a class="btn btn-ghost" href={`tel:${phone}`}>{sitePlan.contact?.phone_display || phone}</a>}
+      {primaryCta && <a class="btn btn-primary" href={primaryCta.href}>{primaryCta.label}</a>}
+    </div>
+  </nav>
+</header>

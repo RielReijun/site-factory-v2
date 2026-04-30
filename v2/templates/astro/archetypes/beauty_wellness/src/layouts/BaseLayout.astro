@@ -1,0 +1,53 @@
+---
+import "../styles/site.css";
+import sitePlan from "../data/sitePlan.json";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import WhatsAppFloat from "../components/WhatsAppFloat.astro";
+
+const { title, description } = Astro.props;
+const pageTitle = title || sitePlan.company_name;
+const pageDescription = description || sitePlan.tagline || sitePlan.company_name;
+const theme = sitePlan.theme || {};
+---
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={pageDescription} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:type" content="website" />
+    {sitePlan.logo && <link rel="icon" type="image/jpeg" href={sitePlan.logo} />}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" />
+    <title>{pageTitle}</title>
+    <style is:global define:vars={{
+      primary: theme.primary || "#b8936a",
+      "primary-dark": theme.primary_dark || "#8d6e4f",
+      secondary: theme.secondary || "#2c2c2c",
+      accent: theme.accent || "#f5ede3",
+      background: theme.background || "#faf8f5",
+      text: theme.text || "#2c2c2c",
+    }}>
+      :root {
+        --primary: var(--primary);
+        --primary-dark: var(--primary-dark);
+        --secondary: var(--secondary);
+        --accent: var(--accent);
+        --background: var(--background);
+        --text: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <Header />
+    <main>
+      <slot />
+    </main>
+    <Footer />
+    <WhatsAppFloat />
+  </body>
+</html>

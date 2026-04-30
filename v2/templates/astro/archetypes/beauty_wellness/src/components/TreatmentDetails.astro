@@ -1,0 +1,32 @@
+---
+const { treatments } = Astro.props;
+const items = treatments || [];
+if (!items.length) return null;
+---
+<section class="section detail-section">
+  <div class="container">
+    <div class="detail-heading">
+      <div class="section-eyebrow">Originele behandelinfo</div>
+      <h2>Behandelingen in detail</h2>
+    </div>
+    <div class="treatment-grid">
+      {items.map((item) => (
+        <article class="treatment-card">
+          <div class="treatment-card-top">
+            <h3>{item.title}</h3>
+            <div class="treatment-meta">
+              {item.duration && <span>{item.duration}</span>}
+              {item.price && <strong>{item.price}</strong>}
+            </div>
+          </div>
+          {item.body && <p>{item.body}</p>}
+          {(item.items || []).length > 0 && (
+            <ul>
+              {item.items.map((part) => <li>{part}</li>)}
+            </ul>
+          )}
+        </article>
+      ))}
+    </div>
+  </div>
+</section>

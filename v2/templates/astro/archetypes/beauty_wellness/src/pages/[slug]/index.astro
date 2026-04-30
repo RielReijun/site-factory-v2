@@ -1,0 +1,42 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import sitePlan from "../../data/sitePlan.json";
+import Services from "../../components/Services.astro";
+import Gallery from "../../components/Gallery.astro";
+import Reviews from "../../components/Reviews.astro";
+import OpeningHours from "../../components/OpeningHours.astro";
+import About from "../../components/About.astro";
+import ContactCta from "../../components/ContactCta.astro";
+import PageContent from "../../components/PageContent.astro";
+import PriceList from "../../components/PriceList.astro";
+import TreatmentDetails from "../../components/TreatmentDetails.astro";
+import ProductStory from "../../components/ProductStory.astro";
+
+export async function getStaticPaths() {
+  return (sitePlan.pages || [])
+    .filter((p) => p.slug)
+    .map((page) => ({ params: { slug: page.slug }, props: { page } }));
+}
+
+const { page } = Astro.props;
+const sectionsForPage = (page.sections || ["pageContent", "contactCta"]);
+---
+<BaseLayout title={`${page.title} | ${sitePlan.company_name}`} description={page.description}>
+  <section class="page-hero">
+    <div class="container">
+      <div class="section-eyebrow">{sitePlan.company_name}</div>
+      <h1>{page.title}</h1>
+      {page.description && <p>{page.description}</p>}
+    </div>
+  </section>
+  {sectionsForPage.includes("pageContent") && <PageContent content={page.content} />}
+  {sectionsForPage.includes("prices") && <PriceList prices={sitePlan.prices} />}
+  {sectionsForPage.includes("treatments") && <TreatmentDetails treatments={sitePlan.treatments} />}
+  {sectionsForPage.includes("products") && <ProductStory products={sitePlan.products} />}
+  {sectionsForPage.includes("services") && <Services services={sitePlan.services} heading={sitePlan.headings?.services} />}
+  {sectionsForPage.includes("gallery") && <Gallery gallery={sitePlan.gallery} heading={sitePlan.headings?.gallery} />}
+  {sectionsForPage.includes("about") && <About about={sitePlan.about} heading={sitePlan.headings?.about} />}
+  {sectionsForPage.includes("reviews") && <Reviews reviews={sitePlan.reviews} heading={sitePlan.headings?.reviews} />}
+  {sectionsForPage.includes("openingHours") && <OpeningHours openingHours={sitePlan.openingHours} contact={sitePlan.contact} heading={sitePlan.headings?.openingHours} />}
+  {sectionsForPage.includes("contactCta") && <ContactCta contactCta={sitePlan.contactCta} contact={sitePlan.contact} social={sitePlan.social} />}
+</BaseLayout>

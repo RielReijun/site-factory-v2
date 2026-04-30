@@ -1,0 +1,28 @@
+---
+const { contactCta, contact, social } = Astro.props;
+if (!contactCta) return null;
+const primary = contactCta.primary;
+const secondary = contactCta.secondary;
+const tertiary = contactCta.tertiary;
+---
+<section class="section" id="contact">
+  <div class="container">
+    <div class="contact-cta">
+      <div>
+        <h2>{contactCta.title}</h2>
+        {contactCta.body && <p>{contactCta.body}</p>}
+        <ul class="contact-info-list">
+          {contact?.address && <li>{contact.address}</li>}
+          {contact?.phone && <li><a href={`tel:${contact.phone}`}>{contact.phone_display || contact.phone}</a></li>}
+          {contact?.email && <li><a href={`mailto:${contact.email}`}>{contact.email}</a></li>}
+          {social?.whatsapp && <li><a href={social.whatsapp}>WhatsApp ons direct</a></li>}
+        </ul>
+      </div>
+      <div class="contact-cta-actions">
+        {primary && <a class="btn btn-primary" href={primary.href}>{primary.label}</a>}
+        {secondary && <a class="btn btn-outline" href={secondary.href}>{secondary.label}</a>}
+        {tertiary && <a class="btn btn-whatsapp" href={tertiary.href}>{tertiary.label}</a>}
+      </div>
+    </div>
+  </div>
+</section>

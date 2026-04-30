@@ -1,0 +1,49 @@
+---
+import sitePlan from "../data/sitePlan.json";
+const year = new Date().getFullYear();
+const navPages = (sitePlan.pages || []).filter((p) => p.in_nav !== false);
+const services = (sitePlan.services || []).slice(0, 5);
+const social = sitePlan.social || {};
+const contact = sitePlan.contact || {};
+---
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <h4>{sitePlan.company_name}</h4>
+        {sitePlan.tagline && <p>{sitePlan.tagline}</p>}
+        {contact.address && <p>{contact.address}</p>}
+      </div>
+      <div>
+        <h4>Navigatie</h4>
+        <ul>
+          {navPages.map((page) => (
+            <li><a href={page.slug ? `/${page.slug}/` : "/"}>{page.title}</a></li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <h4>Behandelingen</h4>
+        <ul>
+          {services.map((service) => (
+            <li><a href={service.href || "#"}>{service.title}</a></li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <h4>Contact</h4>
+        <ul>
+          {contact.phone && <li><a href={`tel:${contact.phone}`}>{contact.phone_display || contact.phone}</a></li>}
+          {contact.email && <li><a href={`mailto:${contact.email}`}>{contact.email}</a></li>}
+          {social.whatsapp && <li><a href={social.whatsapp}>WhatsApp</a></li>}
+          {social.instagram && <li><a href={social.instagram}>Instagram</a></li>}
+          {social.facebook && <li><a href={social.facebook}>Facebook</a></li>}
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; {year} {sitePlan.company_name}</span>
+      <span>Website preview gebouwd door Site Factory</span>
+    </div>
+  </div>
+</footer>

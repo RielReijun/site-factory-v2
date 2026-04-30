@@ -1,0 +1,20 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import sitePlan from "../data/sitePlan.json";
+import Hero from "../components/Hero.astro";
+import Services from "../components/Services.astro";
+import Gallery from "../components/Gallery.astro";
+import Reviews from "../components/Reviews.astro";
+import OpeningHours from "../components/OpeningHours.astro";
+import About from "../components/About.astro";
+import ContactCta from "../components/ContactCta.astro";
+---
+<BaseLayout title={sitePlan.company_name} description={sitePlan.tagline}>
+  <Hero hero={sitePlan.hero} sitePlan={sitePlan} />
+  <Services services={sitePlan.services} heading={sitePlan.headings?.services} />
+  <About about={sitePlan.about} heading={sitePlan.headings?.about} />
+  <Gallery gallery={sitePlan.gallery} heading={sitePlan.headings?.gallery} />
+  <Reviews reviews={sitePlan.reviews} heading={sitePlan.headings?.reviews} />
+  <OpeningHours openingHours={sitePlan.openingHours} contact={sitePlan.contact} heading={sitePlan.headings?.openingHours} />
+  <ContactCta contactCta={sitePlan.contactCta} contact={sitePlan.contact} social={sitePlan.social} />
+</BaseLayout>
