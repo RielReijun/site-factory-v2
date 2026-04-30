@@ -280,6 +280,57 @@ def _extract_contact(structured: dict[str, Any], briefing: str) -> dict[str, str
     }
 
 
+def _pick_featured_service(services: list[dict[str, Any]], price_groups: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pak de duurste behandeling als 'signature'-spotlight.
+
+    Vereist een service mét image (anders ziet de spotlight er kaal uit).
+    Returns leeg dict als geen geschikte kandidaat.
+    """
+    if not price_groups or not services:
+        return {}
+    # Vind de duurste prijs-item over alle groepen
+    best = None
+    best_price = 0.0
+    for group in price_groups:
+        for item in group.get("items") or []:
+            amount_str = item.get("price", "")
+            try:
+                value = float(re.sub(r"[^\d.,]", "", amount_str).replace(",", "."))
+            except ValueError:
+                continue
+            if value > best_price:
+                best_price = value
+                best = {
+                    "title": item.get("label", ""),
+                    "price": amount_str,
+                    "category": group.get("title", ""),
+                }
+    if not best or not best.get("title"):
+        return {}
+    # Hang er een foto aan van de eerste service-card (als die er is)
+    first_with_image = next((s for s in services if s.get("image")), None)
+    return {
+        "title":       best["title"],
+        "description": f"Onze duurste en meest uitgebreide behandeling in de categorie '{best['category']}'." if best.get("category") else "",
+        "price":       best["price"],
+        "image":       first_with_image.get("image") if first_with_image else "",
+        "href":        "/tarieven/",
+    }
+
+
+def _pick_process_steps(briefing: str, sections: dict[str, str]) -> list[dict[str, str]]:
+    """Heuristiek: bouw 3-4 process steps wanneer de briefing erover praat,
+    anders leeg laten zodat de section niet rendert."""
+    blob = (briefing + " " + sections.get("project", "")).lower()
+    if not any(kw in blob for kw in ("werkwijze", "stappenplan", "process", "afspraak maken", "intake")):
+        return []
+    return [
+        {"title": "Kennismaking",  "body": "We bespreken jouw wens en wat past bij je huid en planning."},
+        {"title": "Behandeling",   "body": "Ontspannen tijd alleen voor jou, met natuurlijke producten en aandacht voor detail."},
+        {"title": "Nazorg",        "body": "Adviezen voor thuis zodat het resultaat zo lang mogelijk meegaat."},
+    ]
+
+
 def _voice_copy(voice: Any) -> dict[str, str]:
     """Lever copy-snippets afgestemd op de gedetecteerde aanspreekvorm.
 
@@ -1259,6 +1310,8 @@ class BeautyWellnessArchetype:
                 "openingHours": {"eyebrow": "Plannen",   "title": "Wanneer je terecht kunt"},
                 "about":    {"eyebrow": "Persoonlijk",   "title": f"Over {company_name}"},
                 "stats":    {"eyebrow": "In cijfers",     "title": ""},
+                "process":  {"eyebrow": "Werkwijze",      "title": "Hoe wij werken"},
+                "featured": {"eyebrow": "Signature",      "title": "Onze signature behandeling"},
             },
             "hero": {
                 "eyebrow": eyebrow,
@@ -1313,6 +1366,12 @@ class BeautyWellnessArchetype:
                  "label": s["label"] if isinstance(s, dict) else s.label}
                 for s in inventory.source_copy.stats
             ],
+            # Featured service: pak de duurste / signature behandeling met
+            # foto, voor een spotlight-section. Alleen als services rijk zijn.
+            "featured": _pick_featured_service(services, price_groups),
+            # Process-steps: voor sites met duidelijke werkwijze. Standaard
+            # genericke 3-stap-flow; alleen tonen als briefing er over praat.
+            "process": _pick_process_steps(briefing, sections),
         }
         if not plan["contactCta"]["tertiary"]:
             plan["contactCta"].pop("tertiary")

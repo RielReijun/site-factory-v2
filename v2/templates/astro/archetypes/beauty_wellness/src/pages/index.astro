@@ -9,17 +9,38 @@ import OpeningHours from "../components/OpeningHours.astro";
 import About from "../components/About.astro";
 import ContactCta from "../components/ContactCta.astro";
 import Stats from "../components/Stats.astro";
+import ProcessSteps from "../components/ProcessSteps.astro";
+import FeaturedService from "../components/FeaturedService.astro";
 
 const homePage = (sitePlan.pages || []).find((p) => !p.slug) || {};
 const baseSections = homePage.sections || ["services", "about", "gallery", "reviews", "openingHours", "contactCta"];
-// Stats automatisch invoegen direct na hero als stats-data aanwezig is
+// Conditionele extra-secties uit inventory-data
 const hasStats = sitePlan.stats && sitePlan.stats.length >= 2;
-const sections = hasStats ? ["stats", ...baseSections] : baseSections;
+const hasProcess = sitePlan.process && sitePlan.process.length >= 3;
+const hasFeatured = sitePlan.featured && sitePlan.featured.title;
+
+let sections = [...baseSections];
+// Stats vlak na hero
+if (hasStats) sections = ["stats", ...sections];
+// Featured-service tussen services en about
+if (hasFeatured) {
+  const idx = sections.indexOf("services");
+  if (idx >= 0) sections.splice(idx + 1, 0, "featured");
+  else sections.push("featured");
+}
+// Process-steps voor contactCta
+if (hasProcess) {
+  const cidx = sections.indexOf("contactCta");
+  if (cidx >= 0) sections.splice(cidx, 0, "process");
+  else sections.push("process");
+}
 ---
 <BaseLayout title={sitePlan.company_name} description={sitePlan.tagline}>
   <Hero hero={sitePlan.hero} sitePlan={sitePlan} />
   {sections.map((name) => {
     if (name === "stats")        return <Stats stats={sitePlan.stats} heading={sitePlan.headings?.stats} />;
+    if (name === "process")      return <ProcessSteps steps={sitePlan.process} heading={sitePlan.headings?.process} />;
+    if (name === "featured")     return <FeaturedService service={sitePlan.featured} heading={sitePlan.headings?.featured} />;
     if (name === "services")     return <Services services={sitePlan.services} heading={sitePlan.headings?.services} />;
     if (name === "about")        return <About about={sitePlan.about} heading={sitePlan.headings?.about} />;
     if (name === "gallery")      return <Gallery gallery={sitePlan.gallery} heading={sitePlan.headings?.gallery} variant={sitePlan.variants?.gallery} />;

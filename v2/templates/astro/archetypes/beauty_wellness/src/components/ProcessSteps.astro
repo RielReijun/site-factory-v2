@@ -1,0 +1,23 @@
+---
+const { steps, heading } = Astro.props;
+if (!steps || steps.length < 3) return null;
+const eyebrow = heading?.eyebrow || "Werkwijze";
+const title = heading?.title || "Hoe het gaat";
+---
+<section class="section process-section" id="werkwijze">
+  <div class="container">
+    <header class="section-header">
+      <div class="section-eyebrow">{eyebrow}</div>
+      <h2>{title}</h2>
+    </header>
+    <ol class="process-grid">
+      {steps.map((step, idx) => (
+        <li class="process-step">
+          <div class="process-num">{String(idx + 1).padStart(2, "0")}</div>
+          <h3>{step.title}</h3>
+          {step.body && <p>{step.body}</p>}
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>

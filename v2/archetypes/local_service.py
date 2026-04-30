@@ -289,6 +289,8 @@ class LocalServiceArchetype:
                 "openingHours": {"eyebrow": "Bereikbaar",     "title": "Wanneer je ons kunt bereiken"},
                 "about":        {"eyebrow": "Het verhaal",    "title": f"Over {company_name}"},
                 "stats":        {"eyebrow": "In cijfers",      "title": ""},
+                "process":      {"eyebrow": "Werkwijze",       "title": "Zo gaat het bij ons"},
+                "featured":     {"eyebrow": "Onze focus",      "title": "Wat we het meest doen"},
             },
             "hero": {
                 "eyebrow": "Lokale vakman" + (f", {location}" if location else ""),
@@ -339,6 +341,21 @@ class LocalServiceArchetype:
                 {"value": s.value, "label": s.label}
                 for s in inventory.source_copy.stats
             ],
+            # B2B doet vrijwel altijd projecten via een vaste werkwijze:
+            # offerte → uitvoering → oplevering. Toon process-steps voor
+            # vertrouwens-signaal.
+            "process": [
+                {"title": "Kennismaking",  "body": "We bekijken jouw situatie en luisteren naar wat je wilt."},
+                {"title": "Offerte",       "body": "Heldere prijsopgave op maat, vrijblijvend."},
+                {"title": "Uitvoering",    "body": "Vakwerk met aandacht voor detail en planning."},
+                {"title": "Oplevering",    "body": "Tevredenheid voorop. Bij vragen blijven we bereikbaar."},
+            ] if not is_u_form else [
+                {"title": "Kennismaking",  "body": "Wij bekijken uw situatie en luisteren naar uw wensen."},
+                {"title": "Offerte",       "body": "Heldere prijsopgave op maat, vrijblijvend."},
+                {"title": "Uitvoering",    "body": "Vakwerk met aandacht voor detail en planning."},
+                {"title": "Oplevering",    "body": "Tevredenheid voorop. Bij vragen blijven wij bereikbaar."},
+            ],
+            "featured": {},  # B2B doet zelden 'signature service' spotlight
         }
         if not plan["contactCta"]["tertiary"]:
             plan["contactCta"].pop("tertiary")

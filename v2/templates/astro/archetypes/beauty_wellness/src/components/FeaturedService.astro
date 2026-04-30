@@ -1,0 +1,23 @@
+---
+const { service, heading } = Astro.props;
+if (!service || !service.title) return null;
+const eyebrow = heading?.eyebrow || "Signature";
+const title = heading?.title || "Onze signature behandeling";
+---
+<section class="section featured-service" id="featured">
+  <div class="container featured-grid">
+    <div class="featured-copy">
+      <div class="section-eyebrow">{eyebrow}</div>
+      <h2>{title}</h2>
+      <p class="featured-name">{service.title}</p>
+      {service.description && <p class="featured-body">{service.description}</p>}
+      {service.price && <p class="featured-price">{service.price}</p>}
+      <a class="btn btn-primary" href={service.href || "#contact"}>Plan deze behandeling</a>
+    </div>
+    {service.image && (
+      <div class="featured-visual">
+        <img src={service.image} alt={service.title} loading="lazy" />
+      </div>
+    )}
+  </div>
+</section>
