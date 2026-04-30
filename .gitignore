@@ -4,6 +4,7 @@
 # Gegenereerde output en data (lokaal, niet in repo)
 output/
 data/
+artifacts/
 
 # Python
 __pycache__/
