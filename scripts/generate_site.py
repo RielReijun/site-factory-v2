@@ -407,13 +407,17 @@ def main():
         logo_path=args.logo_path,
     )
 
+    # Op Claude Max OAuth duren grote responses via 'claude --print' soms
+    # 10+ min en lopen tegen retry-timeouts aan. Verlaag dan home-tokens
+    # zodat het iets compactere maar nog wel volledige homepage wordt.
+    use_max = os.getenv("USE_CLAUDE_MAX", "").lower() in ("true", "1", "yes")
     UNIT_MAX_TOKENS = {
-        "layout":  8000,
-        "home":   12000,
-        "page":    8000,
+        "layout":  6000 if use_max else 8000,
+        "home":    8000 if use_max else 12000,  # Max CLI traag bij grote responses
+        "page":    6000 if use_max else 8000,
         "globals": 2000,
     }
-    max_tokens = UNIT_MAX_TOKENS.get(args.unit, 8000)
+    max_tokens = UNIT_MAX_TOKENS.get(args.unit, 6000 if use_max else 8000)
 
     client = get_claude_client(api_key)
     print(f"[INFO] Model: {model} | unit: {args.unit} | max_tokens: {max_tokens}")
