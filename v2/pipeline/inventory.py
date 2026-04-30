@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .visual_dna import VisualDNA, extract_visual_dna
+from .voice_profile import VoiceProfile, extract_voice_profile
 
 
 # ── Types ────────────────────────────────────────────────────────────────────
@@ -130,6 +131,7 @@ class ContentInventory:
     visual_dna: VisualDNA = field(default_factory=VisualDNA)
     signatures: list[Signature] = field(default_factory=list)
     pages_content: dict[str, PageContent] = field(default_factory=dict)
+    voice_profile: VoiceProfile = field(default_factory=VoiceProfile)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -821,6 +823,13 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
             "of body-paragrafen"
         )
 
+    voice_profile = extract_voice_profile(text)
+    if voice_profile.method == "unavailable":
+        warnings.append(
+            "Voice profile niet bepaald (te weinig body-tekst) — render gebruikt "
+            "default je-vorm copy"
+        )
+
     return ContentInventory(
         slug=slug,
         company_name=company_name,
@@ -837,4 +846,5 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
         visual_dna=visual_dna,
         signatures=signatures,
         pages_content=pages_content,
+        voice_profile=voice_profile,
     )

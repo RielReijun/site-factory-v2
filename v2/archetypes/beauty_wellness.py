@@ -279,6 +279,38 @@ def _extract_contact(structured: dict[str, Any], briefing: str) -> dict[str, str
     }
 
 
+def _voice_copy(voice: Any) -> dict[str, str]:
+    """Lever copy-snippets afgestemd op de gedetecteerde aanspreekvorm.
+
+    Default = 'je' (informeel). Schakelt naar 'u' alleen wanneer de
+    addressing-detectie zeker is. Tussenliggende 'mixed' gevallen blijven
+    in de informele variant omdat overswitch naar u-vorm voor sites die
+    eigenlijk je-vorm zijn jarrender voelt dan andersom.
+    """
+    is_u_form = bool(voice and getattr(voice, "addressing", "") == "u")
+    if is_u_form:
+        return {
+            "contact_cta_title":     "Klaar voor uw bezoek?",
+            "contact_cta_body":      "Plan vandaag uw behandeling, dan reserveren wij de tijd voor u.",
+            "contact_cta_primary":   "Online reserveren",
+            "contact_cta_secondary": "Bel direct",
+            "contact_cta_tertiary":  "Stuur een WhatsApp-bericht",
+            "hero_secondary":        "Bekijk de behandelingen",
+            "tarieven_helper":       "Vraag bij twijfel altijd vooraf naar wat de behandeling voor u kost, wij plannen genoeg tijd in en denken graag met u mee.",
+            "behandeling_note":      "Twijfel u over de juiste behandeling? Bel of WhatsApp, dan denken wij graag mee.",
+        }
+    return {
+        "contact_cta_title":     "Klaar voor je verwenmoment?",
+        "contact_cta_body":      "Plan vandaag nog je behandeling, dan reserveren we tijd alleen voor jou.",
+        "contact_cta_primary":   "Online reserveren",
+        "contact_cta_secondary": "Bel ons direct",
+        "contact_cta_tertiary":  "App ons via WhatsApp",
+        "hero_secondary":        "Bekijk behandelingen",
+        "tarieven_helper":       "Hieronder vind je per categorie de actuele tarieven. Vraag bij twijfel altijd vooraf naar wat de behandeling voor jou kost, we plannen genoeg tijd in en denken graag mee.",
+        "behandeling_note":      "Twijfel je welke behandeling past? Bel of WhatsApp, dan denken we even met je mee.",
+    }
+
+
 def _signature_type(signatures: list) -> str:
     """Categoriseer de top-signature in een type dat layout-keuzes informeert.
 
@@ -717,6 +749,7 @@ def _decorate_pages(
     products: dict[str, Any],
     home_section_order: list[str] | None = None,
     pages_content: dict[str, Any] | None = None,
+    voice_copy: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Maak subpagina's inhoudelijk verschillend zonder runtime codegeneratie.
 
@@ -730,6 +763,10 @@ def _decorate_pages(
         "services", "about", "gallery", "reviews", "openingHours", "contactCta"
     ]
     pcs = pages_content or {}
+    vc = voice_copy or {
+        "behandeling_note":  "Twijfel je welke behandeling past? Bel of WhatsApp, dan denken we even met je mee.",
+        "tarieven_helper":   "Hieronder vind je per categorie de actuele tarieven. Vraag bij twijfel altijd vooraf naar wat de behandeling voor jou kost, we plannen genoeg tijd in en denken graag mee.",
+    }
 
     def _fuzzy_match_page(slug: str) -> Any:
         """Vind de beste pages_content match voor een pages.json-slug.
@@ -808,7 +845,7 @@ def _decorate_pages(
                 "lead": verbatim_lead or page.get("description") or "Kies de behandeling die past bij jouw huid, wensen en moment.",
                 "body": verbatim_body or "Deze pagina gebruikt de behandelteksten uit de originele website, inclusief duur, vaste onderdelen en bekende tarieven.",
                 "bullets": verbatim_bullets or [f"{name} met aandacht voor jouw wensen" for name in first_services],
-                "note": "Twijfel je welke behandeling past? Bel of WhatsApp, dan denken we even met je mee.",
+                "note": vc.get("behandeling_note", "Twijfel je welke behandeling past? Bel of WhatsApp, dan denken we even met je mee."),
             }
         elif any(word in lower for word in ("tarief", "tarieven", "prijs", "prijzen", "prijslijst")):
             page["sections"] = ["pageContent", "prices", "contactCta"]
@@ -823,7 +860,7 @@ def _decorate_pages(
                 "eyebrow": "Tarieven",
                 "title": title,
                 "lead": verbatim_lead or page.get("description") or "Heldere prijzen, geen verrassingen.",
-                "body": verbatim_body or "Hieronder vind je per categorie de actuele tarieven. Vraag bij twijfel altijd vooraf naar wat de behandeling voor jou kost, we plannen genoeg tijd in en denken graag mee.",
+                "body": verbatim_body or vc.get("tarieven_helper", "Hieronder vind je per categorie de actuele tarieven."),
                 "bullets": verbatim_bullets or default_bullets,
                 "note": "",
             }
@@ -1158,6 +1195,8 @@ class BeautyWellnessArchetype:
         home_section_order = _pick_home_section_order(sig_type)
         hero_variant = _pick_hero_variant(sig_type, has_image=bool(inventory.images))
         gallery_variant = _pick_gallery_variant(sig_type, n_categories=len(price_groups))
+        # Voice profile bepaalt aanspreekvorm voor CTA-copy en sub-page noten.
+        voice_copy = _voice_copy(inventory.voice_profile)
 
         pages = _decorate_pages(
             _extract_pages(collected_path),
@@ -1169,6 +1208,7 @@ class BeautyWellnessArchetype:
             products,
             home_section_order=home_section_order,
             pages_content=inventory.pages_content,
+            voice_copy=voice_copy,
         )
 
         plan: dict[str, Any] = {
@@ -1195,8 +1235,8 @@ class BeautyWellnessArchetype:
                 "body": hero_body,
                 "image": "",
                 "variant": hero_variant,
-                "primaryCta": {"label": "Online reserveren", "href": "#contact"},
-                "secondaryCta": {"label": "Bekijk behandelingen", "href": "#diensten"},
+                "primaryCta": {"label": voice_copy["contact_cta_primary"], "href": "#contact"},
+                "secondaryCta": {"label": voice_copy["hero_secondary"], "href": "#diensten"},
                 "meta": [
                     {"label": "Persoonlijk", "value": "altijd één behandelaar"},
                     {"label": "Locatie",     "value": location or "in de regio"},
@@ -1229,11 +1269,11 @@ class BeautyWellnessArchetype:
                 "image": "",
             },
             "contactCta": {
-                "title": "Klaar voor je verwenmoment?",
-                "body": "Plan vandaag nog je behandeling, dan reserveren we tijd alleen voor jou.",
-                "primary":   {"label": "Online reserveren", "href": "#contact"},
-                "secondary": {"label": "Bel ons direct",    "href": f"tel:{contact['phone']}" if contact.get("phone") else "#"},
-                "tertiary":  {"label": "App ons via WhatsApp", "href": whatsapp_url} if whatsapp_url else None,
+                "title": voice_copy["contact_cta_title"],
+                "body":  voice_copy["contact_cta_body"],
+                "primary":   {"label": voice_copy["contact_cta_primary"],   "href": "#contact"},
+                "secondary": {"label": voice_copy["contact_cta_secondary"], "href": f"tel:{contact['phone']}" if contact.get("phone") else "#"},
+                "tertiary":  {"label": voice_copy["contact_cta_tertiary"],  "href": whatsapp_url} if whatsapp_url else None,
             },
         }
         if not plan["contactCta"]["tertiary"]:
