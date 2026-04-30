@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import tempfile
+import fcntl
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,17 +40,21 @@ def _load() -> list:
 
 def _save(prospects: list) -> None:
     payload = json.dumps(prospects, indent=2, ensure_ascii=False)
-    fd, tmp = tempfile.mkstemp(dir=str(DATA_DIR), prefix=".prospects_tmp_", suffix=".json")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(payload)
-        os.replace(tmp, str(PROSPECTS_FILE))
-    except Exception:
+    with open(PROSPECTS_FILE, "r+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        fd, tmp = tempfile.mkstemp(dir=str(DATA_DIR), prefix=".prospects_tmp_", suffix=".json")
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+            os.replace(tmp, str(PROSPECTS_FILE))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
@@ -105,7 +110,7 @@ def add_prospect(name: str, url: str, reference_url: str = "") -> str:
     entry: dict = {
         "name":     name,
         "url":      url,
-        "status":   "new",
+        "status":   "pending",
         "added_at": datetime.now(timezone.utc).isoformat(),
     }
     if reference_url:
@@ -208,7 +213,7 @@ def reactivate_prospect(name: str, keep_collected: bool = False) -> str:
                 _save(prospects)
                 return f"Prospect '{name}' gereactiveerd met bestaande collect-data (was: {old_status}). Pipeline start vanaf research."
             else:
-                p["status"] = "new"
+                p["status"] = "pending"
                 for field in ["collected_path", "research_status", "research_path",
                                "briefing_status", "briefing_path", "site_status",
                                "mail_status", "mail_path", "deploy_status",

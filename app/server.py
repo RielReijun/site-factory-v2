@@ -20,7 +20,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests as _requests
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request, send_from_directory, stream_with_context
+from flask import Flask, Response, abort, jsonify, make_response, redirect, render_template, request, send_from_directory, stream_with_context
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+from prospects_utils import load_prospects, mutate_prospects, save_prospects, update_prospect  # noqa: E402
 
 
 PROSPECTS_FILE = Path("/workspace/data/prospects.json")
@@ -30,12 +33,15 @@ SCRIPTS_DIR    = Path("/workspace/scripts")
 LOG_FILE       = Path("/workspace/data/pipeline.log")
 STATUS_FILE    = Path("/workspace/data/pipeline_status.json")
 TRASH_DIR      = Path("/workspace/data/trash")
+RUN_LOG_DIR    = Path("/workspace/data/run_logs")
 TRASH_DAYS     = 14
 
 ANTHROPIC_ADMIN_KEY  = os.environ.get("ANTHROPIC_ADMIN_KEY", "")
 ADMIN_API_BASE       = "https://api.anthropic.com/v1"
 _usage_cache: dict   = {}          # {"ts": float, "data": dict}
 USAGE_CACHE_TTL      = 60          # seconden
+DASHBOARD_TOKEN      = os.environ.get("DASHBOARD_TOKEN", "").strip()
+BRIDGE_TOKEN         = os.environ.get("BRIDGE_TOKEN", "").strip() or DASHBOARD_TOKEN
 
 # Prijzen in USD per 1 miljoen tokens
 PRICING = {
@@ -58,17 +64,28 @@ def slugify(name: str) -> str:
     return name.strip("-")
 
 
-def load_prospects() -> list:
-    if not PROSPECTS_FILE.exists():
-        return []
-    return json.loads(PROSPECTS_FILE.read_text(encoding="utf-8"))
-
-
-def save_prospects(prospects: list) -> None:
-    PROSPECTS_FILE.write_text(
-        json.dumps(prospects, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+def _authorized() -> bool:
+    """Token-auth voor dashboard/API. Leeg token = lokale dev zonder auth."""
+    if not DASHBOARD_TOKEN:
+        return True
+    provided = (
+        request.headers.get("X-Site-Factory-Token", "")
+        or request.args.get("token", "")
+        or request.cookies.get("site_factory_token", "")
     )
+    return provided == DASHBOARD_TOKEN
+
+
+@app.before_request
+def require_dashboard_token():
+    if request.endpoint == "health":
+        return None
+    if request.endpoint in {"serve_site_index", "serve_site_file", "serve_root_assets",
+                            "serve_nextjs_root_assets", "serve_root_relative_via_referer"}:
+        return None
+    if _authorized():
+        return None
+    return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
 
 def calc_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -284,7 +301,22 @@ def get_usage(force: bool = False) -> dict:
 
 @app.get("/")
 def dashboard():
+    if DASHBOARD_TOKEN and request.args.get("token") == DASHBOARD_TOKEN:
+        resp = make_response(redirect("/", code=302))
+        resp.set_cookie(
+            "site_factory_token",
+            DASHBOARD_TOKEN,
+            httponly=True,
+            samesite="Strict",
+            secure=request.is_secure,
+        )
+        return resp
     return render_template("dashboard.html")
+
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
 
 
 @app.get("/api/prospects")
@@ -306,21 +338,23 @@ def api_add():
     if not re.match(r"^https?://", url):
         return jsonify({"ok": False, "error": "URL moet beginnen met http:// of https://"}), 400
 
-    prospects = load_prospects()
+    def _add(prospects: list) -> tuple[bool, str, int]:
+        for p in prospects:
+            if p.get("name", "").strip().lower() == name.lower():
+                return False, f"'{name}' staat al in de lijst", 409
+            if p.get("url", "").strip().rstrip("/") == url.rstrip("/"):
+                return False, f"URL al in gebruik door '{p['name']}'", 409
+        prospects.append({
+            "name":   name,
+            "url":    url,
+            "status": "pending",
+            "added_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return True, "", 200
 
-    for p in prospects:
-        if p.get("name", "").strip().lower() == name.lower():
-            return jsonify({"ok": False, "error": f"'{name}' staat al in de lijst"}), 409
-        if p.get("url", "").strip().rstrip("/") == url.rstrip("/"):
-            return jsonify({"ok": False, "error": f"URL al in gebruik door '{p['name']}'"}), 409
-
-    prospects.append({
-        "name":   name,
-        "url":    url,
-        "status": "pending",
-        "added_at": datetime.now(timezone.utc).isoformat(),
-    })
-    save_prospects(prospects)
+    ok, error, status = mutate_prospects(_add)
+    if not ok:
+        return jsonify({"ok": False, "error": error}), status
 
     return jsonify({"ok": True, "name": name, "url": url})
 
@@ -445,6 +479,11 @@ def api_pages(slug):
 
 @app.post("/api/prospects/<slug>/generate-page")
 def api_generate_page(slug):
+    return jsonify({
+        "ok": False,
+        "error": "Handmatige pagina-generatie hoort bij de oude HTML-pipeline. Gebruik 'Regenerate' voor de huidige Next.js-site.",
+    }), 410
+
     data       = request.get_json(silent=True) or {}
     page_file  = data.get("file",        "").strip()
     page_title = data.get("title",       "").strip()
@@ -573,8 +612,7 @@ def api_regenerate(slug):
             return jsonify({"ok": False, "error": "Pipeline draait al"}), 409
 
         company_name = p["name"]
-        prospects[i]["status"] = "running"
-        save_prospects(prospects)
+        update_prospect(company_name, status="running")
 
         def run_pipeline_bg(cn=company_name, fs=from_step):
             def llog(msg):
@@ -628,7 +666,11 @@ def api_costs(slug):
 
 @app.get("/api/prospects/<slug>/log")
 def api_prospect_log(slug):
-    """Geeft de volledige inhoud van pipeline.log terug als plain text."""
+    """Geeft de prospect-specifieke run-log terug, met fallback op pipeline.log."""
+    specific = RUN_LOG_DIR / f"{slug}.log"
+    if specific.exists():
+        content = specific.read_text(encoding="utf-8", errors="ignore")
+        return content, 200, {"Content-Type": "text/plain; charset=utf-8"}
     if not LOG_FILE.exists():
         return "Nog geen log beschikbaar.", 200, {"Content-Type": "text/plain; charset=utf-8"}
     content = LOG_FILE.read_text(encoding="utf-8", errors="ignore")
@@ -1033,11 +1075,8 @@ def api_deploy(slug):
         if p.get("deploy_status") == "running":
             return jsonify({"ok": False, "error": "Deploy is al bezig"}), 409
 
-        # Markeer als running
-        prospects[i]["deploy_status"] = "running"
-        save_prospects(prospects)
-
         company_name = p["name"]
+        update_prospect(company_name, deploy_status="running")
 
         def run_deploy(sl=slug, cn=company_name, sd=site_dir, idx=i):
             def llog(msg):
@@ -1079,19 +1118,17 @@ def api_deploy(slug):
             except (ValueError, json.JSONDecodeError):
                 pass
 
-            ps = load_prospects()
-            for j, pp in enumerate(ps):
-                if slugify(pp.get("name", "")) == sl:
-                    if proc.returncode == 0:
-                        ps[j]["deploy_status"]  = "done"
-                        ps[j]["github_url"]      = github_url
-                        ps[j]["cloudflare_url"]  = cloudflare_url
-                        llog(f"[OK]  Deploy klaar voor {cn}")
-                    else:
-                        ps[j]["deploy_status"] = "failed"
-                        llog(f"[FAIL] Deploy mislukt voor {cn}")
-                    break
-            save_prospects(ps)
+            if proc.returncode == 0:
+                update_prospect(
+                    cn,
+                    deploy_status="done",
+                    github_url=github_url,
+                    cloudflare_url=cloudflare_url,
+                )
+                llog(f"[OK]  Deploy klaar voor {cn}")
+            else:
+                update_prospect(cn, deploy_status="failed")
+                llog(f"[FAIL] Deploy mislukt voor {cn}")
 
         threading.Thread(target=run_deploy, daemon=True).start()
         return jsonify({"ok": True})
@@ -1233,9 +1270,11 @@ def api_chat():
 
     def _stream():
         try:
+            headers = {"X-Site-Factory-Token": BRIDGE_TOKEN} if BRIDGE_TOKEN else {}
             with _requests.post(
                 f"{BRIDGE_URL}/chat",
                 json={"message": message},
+                headers=headers,
                 stream=True,
                 timeout=130,
             ) as r:

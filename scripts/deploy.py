@@ -12,6 +12,7 @@ Vereiste env-variabelen:
   CLOUDFLARE_API_TOKEN   — Cloudflare API token met Pages:Edit permissie (optioneel)
 """
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -74,8 +75,11 @@ def push_to_github(site_dir: Path, slug: str, company_name: str,
                    token: str, username: str) -> str:
     """Push site_dir naar GitHub. Maakt repo aan als die nog niet bestaat. Geeft HTML-URL terug."""
     repo_name = f"site-{slug}"
-    clone_url = f"https://{username}:{token}@github.com/{username}/{repo_name}.git"
+    clone_url = f"https://github.com/{username}/{repo_name}.git"
     html_url  = f"https://github.com/{username}/{repo_name}"
+    auth_header = "AUTHORIZATION: basic " + base64.b64encode(
+        f"x-access-token:{token}".encode("utf-8")
+    ).decode("ascii")
 
     if not github_repo_exists(token, username, repo_name):
         print(f"[INFO] GitHub repo aanmaken: {html_url}")
@@ -105,11 +109,17 @@ def push_to_github(site_dir: Path, slug: str, company_name: str,
             "-c", "user.name=SiteFactory",
             "commit", "-m", f"Deploy {company_name}", "--allow-empty",
         ],
-        ["git", "push", "-f", "origin", "main"],
+        [
+            "git",
+            "-c", f"http.https://github.com/.extraheader={auth_header}",
+            "push", "-f", "origin", "main",
+        ],
     ]
 
     for cmd in cmds:
         display = " ".join(cmd[:4])
+        if "extraheader" in display.lower():
+            display = "git -c http.https://github.com/.extraheader=*** push"
         print(f"[INFO] git {display}...")
         rc, out, err = _run(cmd, cwd=str(site_dir))
         if rc != 0:

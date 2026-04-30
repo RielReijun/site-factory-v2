@@ -20,6 +20,22 @@ PROJECT_DIR = Path(__file__).parent.parent
 BRIDGE_PORT = 8182
 
 app = Flask(__name__)
+BRIDGE_TOKEN = (os.environ.get("BRIDGE_TOKEN") or os.environ.get("DASHBOARD_TOKEN") or "").strip()
+
+
+def _authorized() -> bool:
+    if not BRIDGE_TOKEN:
+        return True
+    return request.headers.get("X-Site-Factory-Token", "") == BRIDGE_TOKEN
+
+
+@app.before_request
+def require_bridge_token():
+    if request.endpoint == "health":
+        return None
+    if _authorized():
+        return None
+    return {"error": "Unauthorized"}, 401
 
 
 def _find_claude() -> str:
@@ -125,7 +141,6 @@ def chat():
         headers={
             "Cache-Control":               "no-cache",
             "X-Accel-Buffering":           "no",
-            "Access-Control-Allow-Origin": "*",
         },
     )
 

@@ -33,6 +33,7 @@ def _resolve_bridge_url() -> str:
         return "http://172.31.0.1:8182"
 
 BRIDGE_URL = _resolve_bridge_url()
+BRIDGE_TOKEN = (os.getenv("BRIDGE_TOKEN") or os.getenv("DASHBOARD_TOKEN") or "").strip()
 
 
 # ── Nep-response objecten die de Anthropic SDK nabootsen ─────────────────────
@@ -110,6 +111,7 @@ class _MaxMessages:
                 r = requests.post(
                     f"{BRIDGE_URL}/api/claude",
                     json={"prompt": prompt, "system": system},
+                    headers={"X-Site-Factory-Token": BRIDGE_TOKEN} if BRIDGE_TOKEN else {},
                     timeout=620,
                 )
                 data = r.json()

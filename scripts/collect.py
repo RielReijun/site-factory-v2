@@ -636,8 +636,9 @@ def save_prospects(prospects: list) -> None:
 
 
 def get_next_pending_prospect(prospects: list) -> tuple[int, dict] | tuple[None, None]:
+    from prospects_utils import is_queueable
     for index, prospect in enumerate(prospects):
-        if prospect.get("status", "pending") == "pending":
+        if is_queueable(prospect):
             return index, prospect
     return None, None
 

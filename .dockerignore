@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+
+data/
+output/
+
+.git/
+.claude/
+.codex/
+.vscode/
+.idea/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/

@@ -11,10 +11,17 @@ Dit project is een interne websitefabriek die:
 ## Huidige status
 De pipeline heeft nu deze stappen:
 - collect.py
+- research.py
 - brief.py
 - validate_brief.py
 - repair_brief.py
+- discover_pages.py
 - generate_site.py
+- validate_generated_site.py
+- validate_generated_content.py
+- screenshot_validate.py
+- auto_repair.py
+- deploy.py
 
 De huidige testcases zijn:
 - Sander Appel Media
@@ -26,8 +33,9 @@ Omnitour is nu de belangrijkste test-case.
 - Gebruik Python
 - Gebruik Docker Compose
 - Werk binnen de bestaande projectstructuur
-- Gebruik statische HTML, CSS en minimale vanilla JS voor gegenereerde websites
-- Geen React, Next.js, Vue of build tooling in de outputsites
+- Gegenereerde websites zijn statische exports van Next.js App Router projecten
+- Gebruik React/Next.js, TypeScript, Tailwind v4 en DaisyUI volgens de bestaande pipeline
+- Houd de uiteindelijke deploy-output statisch exporteerbaar via `next build` met `output: "export"`
 - Houd scripts simpel, leesbaar en uitbreidbaar
 - Schrijf geen grote refactors zonder noodzaak
 - Wijzig bestaande scripts voorzichtig en leg uit waarom
@@ -51,13 +59,13 @@ Omnitour is nu de belangrijkste test-case.
 ## Wat Claude moet vermijden
 - Geen onnodige abstrahering
 - Geen over-engineering
-- Geen framework pushen waar statische output gevraagd wordt
+- Geen frameworkwissel voorstellen zonder expliciete reden; Next.js is nu de gekozen output-stack
 - Geen verzonnen bedrijfsinformatie in prompts of gegenereerde sites
 - Geen grote wijzigingen zonder eerst het plan uit te leggen
 
 ## Huidige prioriteit
 De huidige prioriteit is:
-1. generatie-output verder opsplitsen in kleinere eenheden
-2. raw output automatisch parsen naar echte bestanden
-3. validatie van generated site output toevoegen
-4. daarna pas GitHub/deploy automatiseren
+1. security hardening voor dashboard, bridge en deploy credentials
+2. queue/statusmodel betrouwbaarder maken
+3. validatie en repair-rondes beter observeerbaar maken
+4. templates en sitekwaliteit verbeteren zonder de pipeline minder reproduceerbaar te maken

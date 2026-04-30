@@ -31,6 +31,7 @@ OUTPUT_DIR     = Path("/workspace/output")
 SCRIPTS_DIR    = Path("/workspace/scripts")
 LOG_FILE       = Path("/workspace/data/pipeline.log")
 STATUS_FILE    = Path("/workspace/data/pipeline_status.json")
+RUN_LOG_FILE: Path | None = None
 
 # Vaste units die altijd gegenereerd worden (home_html altijd eerst voor CSS-ref)
 BASE_UNITS = [
@@ -76,6 +77,13 @@ def log(msg: str) -> None:
                 f.write(msg + "\n")
         except Exception:
             pass
+        if RUN_LOG_FILE:
+            try:
+                RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with RUN_LOG_FILE.open("a", encoding="utf-8") as f:
+                    f.write(msg + "\n")
+            except Exception:
+                pass
 
 
 def write_status(running: bool, prospect: str = "", step: str = "",
@@ -110,7 +118,7 @@ def write_status(running: bool, prospect: str = "", step: str = "",
 
 # ── Prospect helpers ──────────────────────────────────────────────────────────
 
-from prospects_utils import load_prospects, update_prospect  # noqa: E402
+from prospects_utils import is_queueable, load_prospects, update_prospect  # noqa: E402
 
 
 def find_prospect(prospects: list, name: str) -> tuple[int, dict]:
@@ -122,18 +130,13 @@ def find_prospect(prospects: list, name: str) -> tuple[int, dict]:
 
 def find_next_prospect(prospects: list) -> str | None:
     for p in prospects:
-        if p.get("status") == "failed":
-            continue
-        if p.get("site_status") == "done":
-            continue
-        if p.get("status") == "trashed":
-            continue
-        return p["name"]
+        if is_queueable(p):
+            return p["name"]
     return None
 
 
 def mark_site_done(name: str) -> None:
-    update_prospect(name, site_status="done")
+    update_prospect(name, status="collected", site_status="done")
 
 
 def slugify(name: str) -> str:
@@ -1460,9 +1463,12 @@ def main():
 
     LOG_FILE.write_text("", encoding="utf-8")
 
-    global _step_timings, _pipeline_start
+    global _step_timings, _pipeline_start, RUN_LOG_FILE
     _step_timings  = []
     _pipeline_start = time.monotonic()
+    RUN_LOG_FILE = Path("/workspace/data/run_logs") / f"{slug}.log"
+    RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RUN_LOG_FILE.write_text("", encoding="utf-8")
 
     # Voorlopige schatting van total (wordt bijgewerkt na discover_pages)
     total = 10
@@ -1473,6 +1479,7 @@ def main():
     log(f"[INFO]  Slug:       {slug}")
     log(f"[INFO]  Vanaf stap: {args.from_step}")
     log(f"[INFO]  Site-map:   {site_dir}")
+    log(f"[INFO]  Run-log:    {RUN_LOG_FILE}")
     log(f"{'═' * 60}")
     write_status(running=True, prospect=company_name, step="start", step_n=0, total=total)
 
@@ -1959,7 +1966,12 @@ def main():
         log("[OK]  Pipeline voltooid — site verkoopbaar")
     else:
         log("[FAIL] Site niet automatisch herstelbaar — auto_failed")
-        update_prospect(company_name, site_status="auto_failed", review_status="auto_failed")
+        update_prospect(
+            company_name,
+            status="collected",
+            site_status="auto_failed",
+            review_status="auto_failed",
+        )
 
     write_status(running=False, prospect=company_name, step="done",
                  result="ready" if ready else "auto_failed")
