@@ -79,11 +79,8 @@
     .card[data-card-state="built-fail"]  { border-left: 4px solid var(--warn); }
     .card[data-card-state="todo-ok"]     { border-left: 4px solid var(--info); }
     .card[data-card-state="todo-fail"]   { border-left: 4px solid var(--fail); }
-    /* State-pill rechtsboven */
+    /* State-pill in header-row (niet meer absolute, voorkomt overlap met badges) */
     .state-pill {
-      position: absolute;
-      top: 14px;
-      right: 14px;
       font-size: 10px;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -91,7 +88,14 @@
       padding: 3px 8px;
       border-radius: 999px;
       border: 1px solid;
-      z-index: 1;
+      white-space: nowrap;
+    }
+    .card-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 12px 16px 0;
     }
     .state-pill.built-ok    { background: #1f3127; color: var(--ok);   border-color: #28432f; }
     .state-pill.built-fail  { background: #3a2e1f; color: var(--warn); border-color: #4a3a25; }
@@ -101,7 +105,7 @@
       height: 6px;
       background: linear-gradient(90deg, var(--card-primary, #444), var(--card-accent, #888));
     }
-    .card-body { padding: 16px 18px 14px; flex: 1; }
+    .card-body { padding: 10px 16px 14px; flex: 1; }
     .card-title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
     .card-title h3 {
       margin: 0;
@@ -266,18 +270,20 @@
                data-gate-ok="{{ '1' if gate_ok else '0' }}"
                data-name="{{ (p.company_name or '')|lower }} {{ p.slug|lower }}"
                style="--card-primary: {{ p.theme.primary or '#444' }}; --card-accent: {{ p.theme.accent or '#888' }};">
-        <span class="state-pill {{ card_state }}">{{ pill_label }}</span>
         <div class="card-color-strip"></div>
+        <div class="card-header-row">
+          {% if p.archetype == "beauty_wellness" %}
+            <span class="badge beauty">beauty</span>
+          {% elif p.archetype == "local_service" %}
+            <span class="badge local">B2B</span>
+          {% else %}
+            <span class="badge">{{ p.archetype }}</span>
+          {% endif %}
+          <span class="state-pill {{ card_state }}">{{ pill_label }}</span>
+        </div>
         <div class="card-body">
           <div class="card-title">
             <h3>{{ p.company_name or p.slug }}</h3>
-            {% if p.archetype == "beauty_wellness" %}
-              <span class="badge beauty">beauty</span>
-            {% elif p.archetype == "local_service" %}
-              <span class="badge local">B2B</span>
-            {% else %}
-              <span class="badge">{{ p.archetype }}</span>
-            {% endif %}
           </div>
           <div class="card-meta">
             <code>{{ p.slug }}</code>
