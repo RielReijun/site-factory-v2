@@ -62,6 +62,16 @@ def _enrich_prospect(p: dict) -> dict:
 
 @app.get("/")
 def dashboard():
+    # Als de browser op "/" landt vanuit een prospect-pagina (klik op Home in
+    # nav of footer), respecteer de site-context en redirect terug naar de
+    # prospect-home i.p.v. naar het dashboard.
+    referer = request.headers.get("Referer", "")
+    from urllib.parse import urlparse
+    referer_path = urlparse(referer).path or ""
+    site_match = re.match(r"^/sites/([^/]+)/", referer_path)
+    if site_match:
+        return redirect(f"/sites/{site_match.group(1)}/", code=302)
+
     doc = _read_index()
     prospects = [_enrich_prospect(dict(p)) for p in doc.get("prospects", [])]
     # Sorteer: gerenderd én gate-ok eerst, dan rest, dan failed.
