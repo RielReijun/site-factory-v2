@@ -15,6 +15,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .visual_dna import VisualDNA, extract_visual_dna
+
 
 # ── Types ────────────────────────────────────────────────────────────────────
 @dataclass
@@ -97,6 +99,7 @@ class ContentInventory:
     images: list[ImageInfo]
     sources_inspected: list[str]
     warnings: list[str]
+    visual_dna: VisualDNA = field(default_factory=VisualDNA)
 
     def summary(self) -> dict[str, int]:
         return {
@@ -525,6 +528,13 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
     if not images:
         warnings.append("Geen afbeeldingen gevonden in collected/assets")
 
+    visual_dna = extract_visual_dna(collected_path)
+    if visual_dna.method == "unavailable":
+        warnings.append(
+            f"Visual DNA niet beschikbaar (mode={visual_dna.seed_mode}); "
+            f"render valt terug op briefing-kleuren"
+        )
+
     return ContentInventory(
         slug=slug,
         company_name=company_name,
@@ -538,4 +548,5 @@ def build_inventory(slug: str, collected_path: Path) -> ContentInventory:
         images=images,
         sources_inspected=sources_inspected,
         warnings=warnings,
+        visual_dna=visual_dna,
     )

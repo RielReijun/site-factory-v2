@@ -279,7 +279,57 @@ def _extract_contact(structured: dict[str, Any], briefing: str) -> dict[str, str
     }
 
 
+def _darken_hex(hex_color: str, amount: int = 18) -> str:
+    """Maak een donkerder versie van een #RRGGBB voor hover-states.
+
+    Gebruikt naive RGB-darkening (lineair) als fallback; volstaat voor
+    button-hover semantiek. Geen HCT nodig.
+    """
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        return hex_color
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return hex_color
+    factor = max(0, 100 - amount) / 100.0
+    return "#{:02X}{:02X}{:02X}".format(int(r * factor), int(g * factor), int(b * factor))
+
+
+def _theme_from_visual_dna(inventory: ContentInventory) -> dict[str, str] | None:
+    """Bouw het site-thema uit de extracted Visual DNA. Geeft None terug als
+    DNA niet beschikbaar is, zodat de caller op de briefing-fallback kan
+    terugvallen."""
+    dna = inventory.visual_dna
+    if dna.method == "unavailable" or not dna.palette:
+        return None
+    p = dna.palette
+    primary = p.get("primary", "#b8936a")
+    return {
+        "primary":      primary,
+        # primary_dark = ~18% donkerder dan primary voor hover-states.
+        # Material You's primaryContainer is juist LICHTER (pill-achtergrond),
+        # dus die past niet voor een hover-darken.
+        "primary_dark": _darken_hex(primary, amount=18),
+        "secondary":    p.get("onSurface", "#2c2c2c"),
+        # accent = lichte tint van primary, gebruikt als full-width sectie-bg
+        # (.section-tinted). primaryContainer past hier perfect: een gedempte
+        # pastel-versie van het brand. tertiary is te bont voor zo'n band.
+        "accent":       p.get("primaryContainer", "#f5ede3"),
+        "background":   p.get("background", "#faf8f5"),
+        "surface":      p.get("surface", "#ffffff"),
+        "text":         p.get("onSurface", "#2c2c2c"),
+        "outline":      p.get("outline", "#cccccc"),
+        # Provenance voor inspectie:
+        "_seed":        dna.seed_color,
+        "_seed_source": dna.seed_source,
+        "_seed_mode":   dna.seed_mode,
+    }
+
+
 def _extract_theme(briefing: str, sections: dict[str, str]) -> dict[str, str]:
+    """Legacy fallback: lees hex-kleuren uit de Designrichting-sectie van de
+    briefing. Blijft beschikbaar voor wanneer Visual DNA niet bruikbaar is."""
     design = sections.get("designrichting", briefing)
     colors = _HEX_RE.findall(design)
     return {
@@ -970,7 +1020,7 @@ class BeautyWellnessArchetype:
             "tagline": meta.get("description") or structured.get("meta_tags", {}).get("description", ""),
             "source_url": meta.get("url", ""),
             "logo": "",
-            "theme": _extract_theme(briefing, sections),
+            "theme": _theme_from_visual_dna(inventory) or _extract_theme(briefing, sections),
             "contact": contact,
             "social": social,
             "pages": pages,
