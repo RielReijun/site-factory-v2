@@ -1,12 +1,117 @@
 import argparse
 import json
 import os
+import re
+import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipeline_utils import get_claude_client
 
 PROMPTS_DIR = Path("/workspace/prompts/impeccable")
+
+
+def _load_inventory(brief_path: Path) -> dict:
+    """Lees inventory.json naast briefing.md. Graceful fallback bij ontbreken."""
+    inv_path = brief_path.parent / "inventory.json"
+    if not inv_path.exists():
+        return {}
+    try:
+        return json.loads(inv_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _inventory_facts_block(inv: dict) -> str:
+    """Compact verbatim feiten-block voor de generator-prompt.
+
+    Doel: de LLM ziet de echte prijzen, het echte telefoonnummer, signature-
+    zinnen, enz. en mag GEEN AANNEMELIJK gebruiken voor dingen die hierin staan.
+    """
+    if not inv:
+        return ""
+
+    out: list[str] = ["## Bron-feiten (verbatim — citeer exact, geen AANNEMELIJK)"]
+
+    contact = inv.get("contact") or {}
+    parts = []
+    if contact.get("phone_display"): parts.append(f"telefoon={contact['phone_display']}")
+    if contact.get("phone"):         parts.append(f"phone-href={contact['phone']}")
+    if contact.get("email"):         parts.append(f"email={contact['email']}")
+    if contact.get("address"):       parts.append(f"adres={contact['address']}")
+    if parts:
+        out.append("**Contact:** " + " | ".join(parts))
+
+    sc = inv.get("source_copy") or {}
+    if sc.get("tagline"):
+        out.append(f"**Tagline (uit og:description):** {sc['tagline']}")
+    if sc.get("primary_cta"):
+        out.append(f"**Primaire CTA-tekst (uit knoppen):** {sc['primary_cta']}")
+
+    sigs = inv.get("signatures") or []
+    if sigs:
+        out.append("**Signature-zinnen (gebruik in hero/about):**")
+        for s in sigs[:5]:
+            q = s.get("quote", "").strip()
+            if q:
+                out.append(f"  > \"{q}\"")
+
+    prices = inv.get("prices") or []
+    if prices:
+        out.append(f"**Prijzen ({len(prices)} stuks — gebruik EXACT, geen AANNEMELIJK):**")
+        for p in prices[:30]:
+            label = p.get("label", "")
+            amount = p.get("amount", "")
+            cat = p.get("category", "")
+            cat_str = f" [{cat}]" if cat and cat.lower() != "overig" else ""
+            out.append(f"  - {label}: {amount}{cat_str}")
+        if len(prices) > 30:
+            out.append(f"  - ...en nog {len(prices) - 30} prijzen")
+
+    treatments = inv.get("treatments") or []
+    if treatments and not prices:
+        names = [t.get("name") for t in treatments[:10] if t.get("name")]
+        out.append(f"**Behandelingen/diensten:** {', '.join(names)}")
+
+    hours = inv.get("opening_hours") or []
+    if hours:
+        rows = [f"{h.get('day','')} {h.get('range','')}" for h in hours[:7]]
+        out.append("**Openingstijden:** " + " | ".join(rows))
+
+    reviews = inv.get("reviews") or []
+    if reviews:
+        out.append(f"**Echte reviews ({len(reviews)}):**")
+        for r in reviews[:3]:
+            q = r.get("quote", "").strip()
+            if q:
+                out.append(f"  > \"{q[:200]}\"")
+
+    pages_content = inv.get("pages_content") or {}
+    if pages_content:
+        out.append("**Per-pagina bodycopy (gebruik verbatim op de juiste subpagina):**")
+        for slug, pc in list(pages_content.items())[:6]:
+            lead = (pc.get("lead") or "").strip()[:200]
+            if lead:
+                out.append(f"  /{slug or 'home'}: {lead}")
+
+    voice = inv.get("voice_profile") or {}
+    if voice.get("addressing") in ("je", "u"):
+        out.append(f"**Aanspreekvorm (gemeten):** {voice['addressing']}-vorm, "
+                   f"formality={voice.get('formality','gemengd')} — gebruik consistent")
+
+    return "\n".join(out) + "\n"
+
+
+def _check_aannemelijk(tsx: str, page_slug: str = "") -> int:
+    """Tel hoe vaak 'AANNEMELIJK' nog in de gegenereerde TSX zit.
+    Print een waarschuwing — niet fatal, maar wel een signaal."""
+    n = tsx.count("AANNEMELIJK")
+    if n > 0:
+        suffix = f" voor {page_slug}" if page_slug else ""
+        print(f"[WARN] {n}x 'AANNEMELIJK' nog aanwezig in gegenereerde TSX{suffix} — "
+              f"feiten zijn waarschijnlijk niet uit inventory gehaald")
+    return n
 
 
 def _load_impeccable() -> str:
@@ -41,7 +146,8 @@ def write_text(path: Path, text: str) -> None:
 
 def common_rules(briefing: str, company_name: str,
                  images: list[str] | None = None,
-                 nav_pages: list[str] | None = None) -> str:
+                 nav_pages: list[str] | None = None,
+                 inventory: dict | None = None) -> str:
     impeccable = _load_impeccable()
     impeccable_section = f"""
 ## Design referentie (Impeccable)
@@ -70,11 +176,14 @@ Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
     routes = nav_pages if nav_pages else default_nav
     nav_list = "\n".join(f"  - /{r}" for r in routes) + "\n"
 
+    inventory_block = _inventory_facts_block(inventory or {})
+    inventory_section = f"\n{inventory_block}\n" if inventory_block else ""
+
     return f"""Je bent een senior React/Next.js developer en webdesigner.
 
 Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
 Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
-{impeccable_section}{image_section}
+{impeccable_section}{image_section}{inventory_section}
 ## Maak elke site UNIEK — geen generieke templates
 Studeer de briefing grondig. Kies bewust voor dit specifieke merk:
 - **Eigen layout-ritme**: varieer sectie-groottes, witruimte, asymmetrie
@@ -324,8 +433,10 @@ def build_prompt(briefing: str, company_name: str, unit: str,
                  page_title: str = "", page_desc: str = "",
                  images: list[str] | None = None,
                  nav_pages: list[str] | None = None,
-                 logo_path: str = "") -> tuple[str, str]:
-    base      = common_rules(briefing, company_name, images=images, nav_pages=nav_pages)
+                 logo_path: str = "",
+                 inventory: dict | None = None) -> tuple[str, str]:
+    base      = common_rules(briefing, company_name, images=images, nav_pages=nav_pages,
+                             inventory=inventory)
     unit_part = build_unit_part(unit, ref_tsx=ref_tsx, page_slug=page_slug,
                                 page_title=page_title, page_desc=page_desc,
                                 logo_path=logo_path)
@@ -369,6 +480,14 @@ def main():
         raise RuntimeError("ANTHROPIC_API_KEY ontbreekt")
 
     briefing = read_text(Path(args.brief))
+    inventory = _load_inventory(Path(args.brief))
+    if inventory:
+        n_p = len(inventory.get("prices") or [])
+        n_t = len(inventory.get("treatments") or [])
+        n_s = len(inventory.get("signatures") or [])
+        print(f"[INFO] inventory geladen: prijzen={n_p} treatments={n_t} signatures={n_s}")
+    else:
+        print(f"[INFO] geen inventory.json — feiten alleen uit briefing")
 
     ref_tsx = ""
     if args.ref_tsx and Path(args.ref_tsx).exists():
@@ -396,6 +515,7 @@ def main():
         tsx = assemble_from_plan(plan_path, args.page_slug, args.company)
         out_path = Path(args.out)
         write_text(out_path, f"===FILE: src/app/{args.page_slug}/page.tsx===\n{tsx}\n===END_FILE===")
+        _check_aannemelijk(tsx, args.page_slug)
         print(f"[OK] Assembled TSX: {out_path}")
         return
 
@@ -405,6 +525,7 @@ def main():
         page_title=args.page_title, page_desc=args.page_desc,
         images=images, nav_pages=nav_pages,
         logo_path=args.logo_path,
+        inventory=inventory,
     )
 
     # Op Claude Max OAuth duren grote responses via 'claude --print' soms
@@ -455,6 +576,8 @@ def main():
 
     if not raw_output:
         raise RuntimeError("Lege output teruggekregen")
+
+    _check_aannemelijk(raw_output, args.page_slug or args.unit)
 
     out_path = Path(args.out)
     write_text(out_path, raw_output)

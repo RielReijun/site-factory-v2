@@ -29,3 +29,8 @@ Thumbs.db
 # v2 lint tooling (lokaal geïnstalleerd via npm/docker)
 v2/.lint-tools/node_modules/
 v2/.lint-tools/package-lock.json
+v2-archive/.lint-tools/node_modules/
+v2-archive/.lint-tools/package-lock.json
+
+# Codex CLI artifacts
+.codex/

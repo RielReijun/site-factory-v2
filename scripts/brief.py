@@ -179,25 +179,23 @@ Gebruik de stijl, structuur en toon van deze site als designinspiratie — niet 
     return f"""
 Je bent een senior webstrateeg en UX-expert.
 
-Schrijf een compacte markdown briefing voor een nieuwe website voor {company_name}.
-Deze briefing wordt door een AI gebruikt om direct HTML/CSS/JS te genereren.
+Schrijf een **strategische** briefing voor een nieuwe website voor {company_name}.
+
+BELANGRIJK — taakverdeling:
+Een aparte deterministische extractie-laag (`inventory.json`) levert al alle
+**feiten** verbatim aan de generator: prijzen, behandelingen, openingstijden,
+contactgegevens, signatures, reviews, en per-pagina bodycopy. **Deze briefing
+hoeft die feiten NIET te herhalen, samen te vatten, of te bullet-list-en.**
+
+Jouw taak is uitsluitend: strategie, tone, positionering, visuele richting.
+Wat MOET deze website doen (en wat NIET), voor WIE, en HOE in stijl en stem.
 
 Regels:
-- Maximaal 200 regels totaal
-- Maximaal 12 regels per sectie, gebruik bullets, geen alinea's
+- Maximaal 150 regels totaal
+- Bullets, geen alinea's (behalve de slotzin)
 - Geen herhaling, geen opvulling, geen inleidingen
-- Verzin GEEN feiten, markeer onzekerheden met AANNEMELIJK
-- Geen percentages, ROI-claims of statistieken tenzij aantoonbaar
-- **Geen em-dashes (—) of en-dashes (–) in de tekst**: gebruik komma's of punten
-
-## Behoud van originele identiteit
-De huidige site bevat herkenbare elementen die het bedrijf authentiek maken.
-Een nieuwe site verkoopt beter als die herkenbaarheid terugkomt. Pak hieruit:
-- Specifieke dienst/product-namen exact zoals die op de site staan
-- Signature-zinnen en USPs die het bedrijf zelf gebruikt (citeer uit Websitetekst)
-- Eigen vocabulaire (vakjargon, lokale uitdrukkingen, branding-termen)
-- Bestaande klantreviews/testimonials letterlijk (geen verzonnen versies)
-Voeg een sectie '## Behoud uit huidige site' toe met deze elementen als bullets.
+- Verzin GEEN feiten — alle feiten komen uit inventory.json, niet uit jou
+- **Geen em-dashes (—) of en-dashes (–)**: gebruik komma's of punten
 
 ## Input
 
@@ -216,6 +214,7 @@ Schrijf de briefing nu met EXACT deze headings in EXACT deze volgorde — sla er
 
 ## Project
 Max 8 bullets. Wat doet het bedrijf, welke diensten/producten, locatie, bijzonderheden, doel van de nieuwe site.
+**Geen prijzen, geen contactgegevens, geen openingstijden** — die staan al in inventory.json.
 
 ## Doelgroep
 Max 6 bullets. Wie zijn de bezoekers, wat willen ze, wat zijn hun twijfels of drempels.
@@ -223,14 +222,12 @@ Max 6 bullets. Wie zijn de bezoekers, wat willen ze, wat zijn hun twijfels of dr
 ## Wat er mis of zwak is aan de huidige site
 Max 8 bullets. Concrete problemen: structuur, conversie, vertrouwen, UX, techniek.
 
-## Wat behouden moet blijven
-Max 6 bullets. Stijl, content, functionaliteiten of merkwaarden die goed werken.
-
 ## Gewenste verbeteringen
 Max 8 bullets. Wat moet beter: structuur, conversie, vertrouwen, UX, SEO.
 
 ## Tone of voice
 Max 6 bullets. Register, woordkeuze (wel/niet), toon, 1-2 voorbeeldzinnen.
+NB: de inventory bevat al een gemeten je/u-vorm en formality — bevestig of corrigeer.
 
 ## Designrichting
 Max 12 bullets. Gebruik exacte hex-codes uit de CSS waar beschikbaar:
@@ -244,17 +241,8 @@ Max 12 bullets. Gebruik exacte hex-codes uit de CSS waar beschikbaar:
 - Buttons: kleur, radius, stijl
 - Sfeer: [3-5 woorden]
 
-## Aanbevolen paginastructuur
-Per pagina één regel: `bestandsnaam.html — doel in max 10 woorden`
-
-## Belangrijkste secties op de homepage
-Max 8 secties. Per sectie één regel: `Sectienaam — inhoud/doel in max 10 woorden`
-
 ## Contentregels
-Max 6 bullets. Schrijfregels, CTAs (exacte tekst + kleur), verboden termen.
-
-## Wat niet verzonnen mag worden
-Max 5 bullets. Claims, cijfers, reviews of informatie die alleen van de klant mag komen.
+Max 6 bullets. Schrijfregels en absolute do's/don'ts — geen verzonnen claims, branche-jargon dat WEL/NIET gebruikt mag worden, verplichte bewoording.
 
 ## Technische eisen
 Max 6 bullets. SEO, performance, toegankelijkheid, integraties, CMS-wensen.

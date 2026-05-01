@@ -207,6 +207,18 @@ def step_brief(name: str, force: bool, n: int, total: int, prospect: str) -> boo
     return run_cmd(cmd, "brief", n, total, prospect)
 
 
+def step_inventory(slug: str, n: int, total: int, prospect: str) -> bool:
+    """Bouw inventory.json uit collected raw data — verbatim feiten."""
+    cmd = ["python", str(SCRIPTS_DIR / "inventory.py"), "--slug", slug]
+    return run_cmd(cmd, "inventory", n, total, prospect)
+
+
+def step_quality_gate(slug: str, n: int, total: int, prospect: str) -> bool:
+    """Valideer inventory tegen v1-contract. Fail = pipeline stopt."""
+    cmd = ["python", str(SCRIPTS_DIR / "quality_gate.py"), "--slug", slug, "--strict", "--quiet"]
+    return run_cmd(cmd, "quality_gate", n, total, prospect)
+
+
 def step_validate_brief(briefing_path: Path) -> bool:
     cmd = ["python", str(SCRIPTS_DIR / "validate_brief.py"), "--file", str(briefing_path), "--json"]
     data = run_cmd_json(cmd)
@@ -1547,6 +1559,18 @@ def main():
         log(f"[FAIL] Briefing niet gevonden: {briefing_path}")
         write_status(running=False, prospect=company_name, step="brief", result="failed")
         sys.exit(1)
+
+    # ── inventory + quality gate ──────────────────────────────────────────────
+    # Deterministische extractie van bron-feiten (prijzen, contact, signatures,
+    # pages_content). Drives plan_sections + generate_site + content-validatie.
+    # Gebruik de data-dir naam als slug (collect.py slugifyt op domain).
+    data_slug = collected_path.name
+    n += 1
+    if not step_inventory(data_slug, n, total, company_name):
+        log("[WARN] inventory mislukt — pipeline gaat door zonder inventory.json")
+    n += 1
+    if not step_quality_gate(data_slug, n, total, company_name):
+        log("[WARN] quality_gate gaf fails — pipeline gaat door, controleer quality_report.json")
 
     # ── generate ──────────────────────────────────────────────────────────────
     if from_idx <= STEPS.index("generate"):
