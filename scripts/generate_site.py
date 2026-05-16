@@ -115,7 +115,11 @@ def _check_aannemelijk(tsx: str, page_slug: str = "") -> int:
 
 
 def _load_impeccable() -> str:
-    """Laad relevante Impeccable referentiebestanden als design-context."""
+    """Laad Impeccable referentiebestanden als design-context.
+
+    Bij Claude Max (USE_CLAUDE_MAX=true) wordt de context ingekort tot 400 tekens
+    per bestand om CLI-timeouts te voorkomen. De API-versie krijgt de volledige 2000.
+    """
     files = [
         "typography.md",
         "color-and-contrast.md",
@@ -123,11 +127,14 @@ def _load_impeccable() -> str:
         "responsive-design.md",
         "interaction-design.md",
     ]
+    use_max = os.getenv("USE_CLAUDE_MAX", "").lower() in ("true", "1", "yes")
+    max_chars = 400 if use_max else 2000
+
     parts = []
     for f in files:
         path = PROMPTS_DIR / f
         if path.exists():
-            parts.append(f"### {f}\n{path.read_text(encoding='utf-8')[:2000]}")
+            parts.append(f"### {f}\n{path.read_text(encoding='utf-8')[:max_chars]}")
     if not parts:
         return ""
     return "\n\n".join(parts)
@@ -175,6 +182,12 @@ Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
     default_nav = ["", "over-ons", "diensten", "contact"]
     routes = nav_pages if nav_pages else default_nav
     nav_list = "\n".join(f"  - /{r}" for r in routes) + "\n"
+    # Expliciete waarschuwing: Claude gebruikt anders href="#" als fallback
+    nav_href_warning = (
+        "\n**BELANGRIJK:** Gebruik ALTIJD de echte route-URL als href in navigatielinks "
+        "(bijv. `href=\"/over-ons/\"`). NOOIT `href=\"#\"` voor links die naar een pagina verwijzen — "
+        "gebruik `href=\"#\"` uitsluitend voor intra-page anchor-links.\n"
+    )
 
     inventory_block = _inventory_facts_block(inventory or {})
     inventory_section = f"\n{inventory_block}\n" if inventory_block else ""
@@ -184,6 +197,12 @@ Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
 Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
 Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
 {impeccable_section}{image_section}{inventory_section}
+## Navigatielinks — gebruik ALTIJD echte routes
+Gebruik in navigatie en CTA-knoppen ALTIJD de echte route-URL:
+- `href="/over-ons/"` — NOOIT `href="#"`
+- `href="/contact/"` — NOOIT `href="#"`
+- `href="/diensten/"` — NOOIT `href="#"`
+{nav_href_warning}
 ## Maak elke site UNIEK — geen generieke templates
 Studeer de briefing grondig. Kies bewust voor dit specifieke merk:
 - **Eigen layout-ritme**: varieer sectie-groottes, witruimte, asymmetrie
@@ -291,7 +310,7 @@ Het doel: de gebruiker herkent zijn eigen bedrijf direct, maar in een profession
 
 def build_unit_part(unit: str, ref_tsx: str = "",
                     page_slug: str = "", page_title: str = "",
-                    page_desc: str = "", logo_path: str = "") -> str:
+                    page_desc: str = "", logo_path: str = "", **kwargs) -> str:
 
     if unit == "layout":
         logo_instruction = (
@@ -345,6 +364,27 @@ Genereer deze bestanden:
 """
 
     if unit == "home":
+        no_backend = kwargs.get("no_backend", False)
+        no_backend_block = """
+## Geen backend-componenten (statische site)
+Dit is een volledig statische site. De homepage mag ABSOLUUT GEEN van het volgende bevatten:
+- Contactformulieren: `<form>`, `<input type="email">`, `<textarea>`, `<select>`
+- Submit-knoppen voor formulieren
+- BookingWidget of andere reserverings-widgets die een externe service vereisen
+- API-calls, fetch, axios of server-side logica
+- `<input>`, `<textarea>`, `<select>` elementen van welke aard dan ook
+
+**Iframes zijn ALLEEN toegestaan als ze ook aantoonbaar op de originele website stonden**
+(bijv. een virtuele tour van Matterport/Google Street View, een ingebedde YouTube video,
+of een Google Maps embed). Gebruik dan de exacte src-URL uit de briefing of inventory.
+Verzin GEEN iframe-URLs — als er geen iframe-URL in de brondata staat, gebruik je er geen.
+
+Gebruik in plaats van een contactformulier:
+- Een grote klikbare `<a href="tel:...">` telefoonknop
+- Een `<a href="mailto:...">` e-maillink
+- Een WhatsApp-link (`https://wa.me/31...`) als er een mobiel nummer in de briefing staat
+""" if no_backend else ""
+
         return f"""
 ## Opdracht
 Genereer ALLEEN dit bestand:
@@ -352,7 +392,7 @@ Genereer ALLEEN dit bestand:
 ===FILE: src/app/page.tsx===
 ...inhoud...
 ===END_FILE===
-
+{no_backend_block}
 ## Eisen
 - Complete homepage: hero, diensten/features, over-sectie, CTA-sectie, eventueel FAQ
 - Importeer Header en Footer NIET — die zitten in layout.tsx
@@ -434,12 +474,13 @@ def build_prompt(briefing: str, company_name: str, unit: str,
                  images: list[str] | None = None,
                  nav_pages: list[str] | None = None,
                  logo_path: str = "",
-                 inventory: dict | None = None) -> tuple[str, str]:
+                 inventory: dict | None = None,
+                 no_backend: bool = False) -> tuple[str, str]:
     base      = common_rules(briefing, company_name, images=images, nav_pages=nav_pages,
                              inventory=inventory)
     unit_part = build_unit_part(unit, ref_tsx=ref_tsx, page_slug=page_slug,
                                 page_title=page_title, page_desc=page_desc,
-                                logo_path=logo_path)
+                                logo_path=logo_path, no_backend=no_backend)
     return base, unit_part
 
 
@@ -472,6 +513,8 @@ def main():
     parser.add_argument("--image-manifest", default="")
     parser.add_argument("--nav-pages",  default="")
     parser.add_argument("--logo-path",  default="", help="Relatief pad naar logo in public/ (bijv. logo.png)")
+    parser.add_argument("--no-backend", action="store_true",
+                        help="Verbied backend-componenten in home-unit (formulieren, widgets, iframes)")
     args = parser.parse_args()
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -526,6 +569,7 @@ def main():
         images=images, nav_pages=nav_pages,
         logo_path=args.logo_path,
         inventory=inventory,
+        no_backend=args.no_backend,
     )
 
     # Op Claude Max OAuth duren grote responses via 'claude --print' soms
@@ -557,9 +601,11 @@ def main():
     for attempt in range(1, MAX_RATE_RETRIES + 1):
         try:
             chunks: list[str] = []
+            unit_label = args.page_slug or args.unit
             with client.messages.stream(
                 model=model, max_tokens=max_tokens,
                 messages=messages_payload,
+                label=unit_label,
             ) as stream:
                 for text in stream.text_stream:
                     chunks.append(text)

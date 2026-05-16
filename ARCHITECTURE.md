@@ -37,10 +37,15 @@ site-factory/
 │   ├── polish_site.py     # Footer, OG tags, schema.org, demo-banner
 │   ├── screenshot_validate.py  # Playwright + Claude Vision
 │   ├── generate_mail.py   # Outreach-mail via Claude
+│   ├── inventory.py       # Deterministische feitenextractie (GEEN LLM) → inventory.json
 │   ├── color_utils.py     # OKLCH kleurenpalet-generator
 │   ├── template_engine.py # Recursive descent parser voor TSX-templates
+│   ├── voice_profile.py   # je/u-vorm analyse + formaliteitsniveau uit bronsite
+│   ├── source_copy.py     # Verbatim brand copy: tagline, CTA-labels, h2-koppen, stats
 │   ├── component_registry.py  # Template assembler (legacy, niet in kritiek pad)
-│   └── pipeline_utils.py  # Gedeelde utilities (slugify, with_retry, etc.)
+│   ├── config.py          # Gecentraliseerde configuratieconstanten
+│   ├── auto_repair.py     # Herstelronden (max 3) op basis van validatie-issues
+│   └── pipeline_utils.py  # Gedeelde utilities (slugify, with_retry, get_claude_client, etc.)
 │
 ├── prompts/
 │   ├── impeccable/        # Design-referentiebestanden (typography, color, etc.)
@@ -128,6 +133,40 @@ De orchestrator `run_pipeline.py` roept elke stap als subprocess aan.
 `validate_brief.py`: controleert verplichte secties en risicovolle claims.
 Bij problemen: `repair_brief.py` laat Claude herziening maken + slaat diff op als `repair_diff.txt`.
 
+**validate_brief.py controles:**
+- 14 verplichte secties aanwezig
+- Hard risks (percentages, ROI-claims, marktleider-claims) → blokkeert pipeline (exit 1)
+- Soft risks (revolutionary, game-changer) → waarschuwing
+- Minimale lengte: 2500 tekens
+
+**repair_brief.py werking:**
+1. Deterministische pass: ontbrekende secties vullen met defaults (geen LLM)
+2. LLM-pass: hard_risk-secties herschrijven via Claude
+
+---
+
+### Stap 4b — Inventory (`inventory.py`)
+
+**Draait na repair_brief, vóór discover_pages.**
+
+Extraheert **zonder LLM** verbatim feiten uit de brondata. Dit is het anti-hallucination kerncomponent.
+
+**Input:** `/data/[slug]/` (text.txt, structured_data.json, raw.html, facts.json)
+
+**Output:** `inventory.json` met:
+- `prices` — bedrag, label, duur, categorie, confidence (high/medium/low), bron
+- `treatments` — behandelingsnamen uit prijscategorieën
+- `opening_hours` — dag/tijdsbereik via regex op text.txt
+- `reviews` — blockquotes uit raw.html
+- `contact` — telefoon, e-mail, adres (structured_data → text → raw.html)
+- `signatures` — verbatim citaten die brand voice vangen
+- `pages_content` — per-pagina body (eerste 200 tekens)
+- `voice_profile` — je/u-vorm + formaliteitsniveau (via voice_profile.py)
+- `source_copy` — tagline, CTA-labels, h2-koppen, statistieken (via source_copy.py)
+
+**Het AANNEMELIJK-sentinel systeem:**
+`generate_site.py` injecteert `inventory.json` in de prompt. Wanneer de generator een feit toevoegt dat niet in inventory.json staat, plaatst hij het token `AANNEMELIJK` vóór die zin. `validate_generated_content.py` rapporteert alle AANNEMELIJK-tokens als kritieke bevinding. Nul AANNEMELIJK-tokens is de norm.
+
 ---
 
 ### Stap 5 — Discover Pages (`discover_pages.py`)
@@ -135,6 +174,8 @@ Bij problemen: `repair_brief.py` laat Claude herziening maken + slaat diff op al
 Claude leest de briefing en bepaalt de routes van de nieuwe site.
 
 **Output:** `pages.json` — lijst van `{file, title, description}`
+
+**Limiet:** MAX_AUTO_PAGES = 20 (instelbaar via env). Pagina's daarboven worden opgeslagen als `overflow_pages` in `pages.json` en worden **niet automatisch gegenereerd** — dit is een stille beperking.
 
 ---
 
@@ -281,6 +322,24 @@ Playwright headless Chromium:
 Claude Vision analyseert op: contrast, gebroken layouts, placeholders (demo-banner genegeerd), lege secties.
 Bij issues: CSS-overrides gegenereerd en als `<style>` geïnjecteerd.
 
+**Let op:** `screenshot_validate.py` sluit altijd af met exit code 0. Visuele problemen zijn nooit blokkeerders — ze worden gelogd en doorgegeven aan `auto_repair.py`.
+
+---
+
+### Stap 13b — Auto Repair (`auto_repair.py`)
+
+Iteratieve herstelronden op basis van alle validatie-issues. Draait na screenshot_validate.
+
+**Classifier:** bepaalt type probleem per issue:
+- `content_missing` → injecteert verbatim uit facts.json in HTML
+- `missing_page` → regenereert pagina via Claude
+- `visual_issue` → CSS-overrides → regenereert → fallback op safe-template
+- `build_failed` → TypeScript autofix → regenereert
+- `validate_failed` → directe HTML-patch
+
+**Iteraties:** max 3 ronden. Na elke ronde: hervalidatie.
+**Filosofie:** graceful degradation — pipeline logt problemen maar crasht niet. Sites kunnen met bekende beperkingen worden opgeleverd.
+
 ---
 
 ### Stap 14 — Cohesion Pass
@@ -362,6 +421,19 @@ Auto-generate via Claude als onbekend type wordt opgevraagd → opgeslagen voor 
 
 ---
 
+## Security-aandachtspunten
+
+| Risico | Huidige staat | Prioriteit |
+|---|---|---|
+| Query-parameter token in dashboard | `?token=...` verschijnt in server-logs en browser-history | Hoog |
+| Bridge op host-netwerk | `network_mode: host` → toegang tot alle host-poorten | Hoog |
+| Scheduler: geen concurrency-controle | While-true-sleep loop; runs overlappen bij lange pipeline | Middel |
+| GitHub/Cloudflare tokens in `.env` | Nooit in git; `.env.example` als template | Laag (correct) |
+
+**Bridge OAuth fallback (gedrag om te kennen):** De bridge strip `ANTHROPIC_API_KEY` uit zijn omgeving om Claude Max OAuth te forceren. Als `CLAUDE_BIN` naar een Claude Code installatie wijst, worden alle bridge-requests via het Max-account gefactureerd — geen API-kosten. Dit gedrag is niet onmiddellijk zichtbaar in logs.
+
+---
+
 ## Bekende beperkingen
 
 | Probleem | Huidige staat |
@@ -372,6 +444,9 @@ Auto-generate via Claude als onbekend type wordt opgevraagd → opgeslagen voor 
 | Font weights | Auto-fix: 500/600/800 → 400 voor Lato |
 | Zelfverzonnen kleurnamen | Auto-fix in `_fix_daisyui_colors()` voor Header.tsx |
 | Booking widget | Component aangemaakt maar Claude moet het zelf inzetten op basis van briefing |
+| Visuele issues stoppen pipeline nooit | `screenshot_validate.py` exit altijd 0; problemen zijn waarschuwingen, geen blockers |
+| overflow_pages worden niet gegenereerd | Pagina's boven MAX_AUTO_PAGES=20 staan in `pages.json` maar worden overgeslagen |
+| Scheduler zonder job-isolatie | Parallelle runs bij pipeline > 3600s; geen dead-job-detectie |
 
 ---
 
@@ -399,19 +474,27 @@ URL
  ▼
 collect.py ─────────────────────────────────── /data/[slug]/
  │  text.txt, structured_data.json,              text.txt
- │  assets/, logo.*, raw.html                    structured_data.json
+ │  assets/, logo.*, raw.html, facts.json        structured_data.json
  │
  ▼
 research.py (Claude) ──────────────────────── research.md
- │
+ │                                               research/competitors.json
  ▼
 brief.py (Claude streaming) ───────────────── briefing.md
+ │  max ~5000 tekens, 14 verplichte secties      briefing_meta.json
  │
  ▼
 validate_brief → repair_brief (Claude)
+ │  deterministische + LLM-herstelronde          briefing.repaired.md
+ │                                               repair_diff.txt
+ ▼
+inventory.py (GEEN LLM) ───────────────────── inventory.json
+ │  verbatim prijzen, uren, reviews,             (prijzen, uren, reviews,
+ │  voice profile, source copy                    contact, voice, copy)
  │
  ▼
 discover_pages (Claude) ───────────────────── pages.json
+ │  max 20 auto-pagina's                         (overflow_pages voor rest)
  │
  ▼
 scaffold_nextjs ────────────────────────────── /output/[slug]-next/
@@ -420,13 +503,14 @@ scaffold_nextjs ─────────────────────�
  │
  ▼
 generate layout (Claude streaming) ──────────── src/app/layout.tsx
- │  + _fix_globals_css (color_utils)             src/components/{Header,Footer}.tsx
- │  + _fix_lucide_icons                          src/app/globals.css (OKLCH palet)
+ │  + _fix_globals_css (color_utils OKLCH)        src/components/{Header,Footer}.tsx
+ │  + _fix_lucide_icons                           src/app/globals.css (OKLCH palet)
  │  + _patch_daisyui_theme
  │
  ▼
 generate home + pages (Claude, parallel) ────── src/app/page.tsx
  │  prompt caching (~82% hit rate)               src/app/[route]/page.tsx
+ │  inventory.json geïnjecteerd in prompt
  │  homepage als TSX-referentie voor subpagina's
  │
  ▼
@@ -435,19 +519,36 @@ npm run build ──────────────────────
  │  next-sitemap                                 out/sitemap.xml
  │
  ▼
-validate + repair + content-check
+validate_generated_site ────────────────────── validation_result.json
+ │  structuurcheck: DOCTYPE, links, markers
  │
  ▼
-screenshot validate (Playwright + Claude Vision)
- │  375px mobiel + 1280px desktop
+repair_generated_site ──────────────────────── out/ (gepatcht)
+ │  markers, gebroken links, lazy loading
+ │
+ ▼
+validate_generated_content ─────────────────── content_validation.json
+ │  naam, telefoon, prijzen, AANNEMELIJK-tokens
+ │  (kritiek: exit 1 | waarschuwing: exit 0)
+ │
+ ▼
+screenshot_validate (Playwright + Claude Vision) screenshot_validation.json
+ │  375px mobiel + 1280px desktop               (altijd exit 0, nooit blokkerend)
+ │  2 willekeurige subpagina's
+ │
+ ▼
+auto_repair.py (max 3 ronden) ──────────────── out/ (gepatcht)
+ │  classifier: content_missing / missing_page
+ │  / visual_issue / build_failed / validate_failed
  │
  ▼
 cohesion pass (Claude) ─────────────────────── <style> in HTML heads
+ │  CSS-overrides voor subpagina-consistentie
  │
  ▼
 polish ─────────────────────────────────────── footer normalisatie
  │  schema.org, OG tags, canonical               schema.org JSON-LD
- │  demo-banner
+ │  demo-banner injecteren
  │
  ▼
 generate_mail (Claude)

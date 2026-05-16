@@ -645,6 +645,37 @@ def get_next_pending_prospect(prospects: list) -> tuple[int, dict] | tuple[None,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _take_original_screenshot(url: str, target_dir: Path) -> None:
+    """Maak een screenshot van de originele site voor de voor/na vergelijking."""
+    out_path = target_dir / "original_screenshot.png"
+    if out_path.exists():
+        print(f"[INFO] original_screenshot.png bestaat al — overgeslagen")
+        return
+    try:
+        import subprocess, sys
+        script = (
+            "from playwright.sync_api import sync_playwright\n"
+            "with sync_playwright() as p:\n"
+            "    b = p.chromium.launch()\n"
+            f"    page = b.new_page(viewport={{'width':1280,'height':720}})\n"
+            f"    page.goto({url!r}, wait_until='domcontentloaded', timeout=20000)\n"
+            "    page.wait_for_timeout(1500)\n"
+            f"    page.screenshot(path={str(out_path)!r}, full_page=False)\n"
+            "    b.close()\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, timeout=45,
+        )
+        if result.returncode == 0:
+            size_kb = out_path.stat().st_size // 1024
+            print(f"[OK]  Original screenshot opgeslagen ({size_kb}KB)")
+        else:
+            print(f"[WARN] Screenshot originele site mislukt: {result.stderr[:200]}")
+    except Exception as e:
+        print(f"[WARN] Screenshot originele site mislukt: {e}")
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -732,6 +763,9 @@ def main():
         from prospects_utils import update_prospect
         update_prospect(name, status="collected", collected_path=str(target_dir))
         print("[OK] Prospect status bijgewerkt naar 'collected'")
+
+        # ── Screenshot van de originele site (voor/na vergelijking) ─────────
+        _take_original_screenshot(url, target_dir)
 
     except SystemExit:
         raise

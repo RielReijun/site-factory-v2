@@ -335,13 +335,33 @@ def inject_demo_banner(site_dir: Path, company_name: str) -> list[str]:
     phone_line = f'<a href="tel:{agency_phone}" style="color:#6366f1;text-decoration:none;font-weight:500">{agency_phone}</a>' if agency_phone else ""
     contact_lines = "<br>".join(filter(None, [email_line, phone_line]))
 
-    banner_html = f"""  <div id="{DEMO_BANNER_ID}" style="position:fixed;bottom:20px;right:20px;z-index:99999;background:#fff;color:#1e293b;font-family:sans-serif;font-size:13px;line-height:1.5;padding:14px 16px 12px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);max-width:220px;border:1px solid #e2e8f0">
-    <button onclick="document.getElementById('{DEMO_BANNER_ID}').style.display='none';sessionStorage.setItem('{DEMO_BANNER_ID}','1')" style="position:absolute;top:8px;right:10px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:15px;line-height:1;padding:0">×</button>
-    <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Demo</div>
-    <div style="font-weight:600;margin-bottom:8px;padding-right:16px">{company_name}</div>
-    <div style="font-size:12px;color:#475569">Interesse? Neem contact op:<br>{contact_lines}</div>
-  </div>
-  <script>if(sessionStorage.getItem('{DEMO_BANNER_ID}'))document.getElementById('{DEMO_BANNER_ID}').style.display='none';</script>"""
+    # Meta-tags voor contactinfo (leesbaar door paywall-script én banner-script)
+    meta_tags = "\n".join(filter(None, [
+        f'<meta name="agency-name"  content="{agency_name}">'  if agency_name  else "",
+        f'<meta name="agency-email" content="{agency_email}">' if agency_email else "",
+        f'<meta name="agency-phone" content="{agency_phone}">' if agency_phone else "",
+    ]))
+
+    # Demo-banner dynamisch aangemaakt via JS — overleeft React hydration
+    banner_script = f"""<script id="{DEMO_BANNER_ID}-script">
+(function(){{
+  var KEY = "{DEMO_BANNER_ID}";
+  if(sessionStorage.getItem(KEY)) return;
+  var el = document.createElement("div");
+  el.id = KEY;
+  el.setAttribute("style","position:fixed;bottom:20px;right:20px;z-index:99998;background:#fff;color:#1e293b;font-family:sans-serif;font-size:13px;line-height:1.5;padding:14px 16px 12px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);max-width:240px;border:1px solid #e2e8f0");
+  var phone = "{agency_phone}";
+  var email = "{agency_email}";
+  var contactHtml = "";
+  if(phone) contactHtml += '<a href="tel:'+phone+'" style="display:block;color:#6366f1;font-weight:600;text-decoration:none;margin-bottom:4px">&#128222; '+phone+'</a>';
+  if(email) contactHtml += '<a href="mailto:'+email+'" style="display:block;color:#6366f1;font-weight:600;text-decoration:none">&#9993; '+email+'</a>';
+  el.innerHTML = '<button onclick="this.closest(\\'#'+KEY+'\\').style.display=\\'none\\';sessionStorage.setItem(\\''+KEY+'\\',\\'1\\')" style="position:absolute;top:8px;right:10px;background:none;border:none;color:#94a3b8;cursor:pointer;font-size:15px;line-height:1;padding:0">&times;</button>'
+    +'<div style="font-size:11px;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Demo</div>'
+    +'<div style="font-weight:600;margin-bottom:8px;padding-right:16px">{company_name}</div>'
+    +'<div style="font-size:12px;color:#475569">Interesse? Neem contact op:<br>'+contactHtml+'</div>';
+  document.body.appendChild(el);
+}})();
+</script>"""
 
     fixes: list[str] = []
     for html_path in sorted(site_dir.glob("*.html")):
@@ -350,11 +370,12 @@ def inject_demo_banner(site_dir: Path, company_name: str) -> list[str]:
         content = html_path.read_text(encoding="utf-8", errors="ignore")
         if DEMO_BANNER_ID in content:
             continue
-        new_content = re.sub(
-            r"(<body[^>]*>)",
-            r"\1\n" + banner_html,
-            content, flags=re.IGNORECASE, count=1,
-        )
+        # Meta-tags in <head>, banner-script voor </body>
+        new_content = content
+        if meta_tags and "</head>" in new_content:
+            new_content = new_content.replace("</head>", meta_tags + "\n</head>", 1)
+        if "</body>" in new_content:
+            new_content = new_content.replace("</body>", banner_script + "\n</body>", 1)
         if new_content != content:
             html_path.write_text(new_content, encoding="utf-8")
             fixes.append(f"Demo-banner toegevoegd aan {html_path.name}")

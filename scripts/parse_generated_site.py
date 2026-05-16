@@ -12,8 +12,19 @@ MANIFEST_FILENAME = "site_manifest.json"
 
 
 def _normalize_marker(stripped: str) -> str:
-    """Strip markdown heading/quote prefixes (# / ## / >) that AI sometimes adds."""
-    return re.sub(r'^[#>]+\s*', '', stripped)
+    """Strip markdown decoratie die AI soms om markers plaatst.
+
+    Ondersteunt:
+      # ===FILE: ...===          (heading prefix)
+      > ===FILE: ...===          (quote prefix)
+      **`===FILE: ...===`**      (bold + backtick — Claude Max)
+      `===FILE: ...===`          (backtick only)
+      **===FILE: ...===**        (bold only)
+    """
+    s = re.sub(r'^[#>]+\s*', '', stripped)          # heading / quote prefix
+    s = re.sub(r'^\*+`?|`?\*+$', '', s).strip()    # **` ... `** of ** ... **
+    s = re.sub(r'^`|`$', '', s).strip()             # ` ... `
+    return s
 
 
 def read_text(path: Path) -> str:

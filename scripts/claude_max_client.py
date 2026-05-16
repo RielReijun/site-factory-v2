@@ -15,20 +15,23 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from typing import Any, Iterator
 
 import requests
 
 def _resolve_bridge_url() -> str:
-    """Probeer host.docker.internal, val terug op het standaard Docker gateway-adres."""
-    default = os.getenv("BRIDGE_URL", "http://host.docker.internal:8182")
-    if "host.docker.internal" not in default:
-        return default
+    """Bepaal bridge URL. Als BRIDGE_URL expliciet is gezet, vertrouw die direct."""
+    explicit = os.getenv("BRIDGE_URL", "").strip()
+    if explicit:
+        return explicit
+    # Standaard: host.docker.internal werkt op Docker Desktop (Mac/Windows).
+    # Fallback naar het Docker gateway-adres voor Linux-hosts zonder DNS-alias.
     try:
         import socket
         socket.getaddrinfo("host.docker.internal", 8182, timeout=1)
-        return default
+        return "http://host.docker.internal:8182"
     except Exception:
         return "http://172.31.0.1:8182"
 
@@ -89,7 +92,8 @@ class _StreamContext:
 class _MaxMessages:
     """Vervangt client.messages — routeert via bridge."""
 
-    def _call_bridge(self, messages: list, system: str = "", **kwargs) -> str:
+    def _call_bridge(self, messages: list, system: str = "",
+                     label: str = "", **kwargs) -> str:
         """Roep de bridge aan en geef de tekst terug."""
         # Bouw prompt op uit messages-lijst (zelfde als Anthropic SDK)
         parts = []
@@ -109,15 +113,19 @@ class _MaxMessages:
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 r = requests.post(
-                    f"{BRIDGE_URL}/api/claude",
-                    json={"prompt": prompt, "system": system},
-                    headers={"X-Site-Factory-Token": BRIDGE_TOKEN} if BRIDGE_TOKEN else {},
-                    timeout=620,
-                )
+                        f"{BRIDGE_URL}/api/claude",
+                        json={"prompt": prompt, "system": system},
+                        headers={"X-Site-Factory-Token": BRIDGE_TOKEN} if BRIDGE_TOKEN else {},
+                        timeout=1820,
+                    )
+
                 data = r.json()
                 if data.get("error"):
                     raise RuntimeError(data["error"])
-                return data.get("content", "")
+                content = data.get("content", "")
+                chars = len(content)
+                print(f"[OK]  Claude Max klaar — {chars} tekens ontvangen", flush=True)
+                return content
             except Exception as e:
                 if attempt < MAX_RETRIES:
                     wait = 30 * attempt
@@ -127,18 +135,19 @@ class _MaxMessages:
                     raise
 
     def create(self, model: str = "", max_tokens: int = 4000,
-               messages: list = None, system: str = "", **kwargs) -> _Message:
+               messages: list = None, system: str = "",
+               label: str = "", **kwargs) -> _Message:
         """Vervangt client.messages.create()"""
-        content = self._call_bridge(messages or [], system=system)
-        # Schat tokens op basis van tekst (ruwe benadering)
+        content = self._call_bridge(messages or [], system=system, label=label)
         in_tok  = sum(len(str(m.get("content", ""))) for m in (messages or [])) // 4
         out_tok = len(content) // 4
         return _Message(content, in_tok, out_tok)
 
     def stream(self, model: str = "", max_tokens: int = 4000,
-               messages: list = None, system: str = "", **kwargs) -> _StreamContext:
+               messages: list = None, system: str = "",
+               label: str = "", **kwargs) -> _StreamContext:
         """Vervangt client.messages.stream() — context manager"""
-        content = self._call_bridge(messages or [], system=system)
+        content = self._call_bridge(messages or [], system=system, label=label)
         in_tok  = sum(len(str(m.get("content", ""))) for m in (messages or [])) // 4
         out_tok = len(content) // 4
         return _StreamContext(content, in_tok, out_tok)

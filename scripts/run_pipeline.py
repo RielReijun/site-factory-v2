@@ -1202,6 +1202,7 @@ def _run_unit_buffered(
     image_manifest: Path | None, nav_pages: list[str] | None,
     project_dir: Path,
     logo_path: str = "",
+    no_backend: bool = False,
 ) -> tuple[bool, str, list[str]]:
     """Genereer + parse één unit in een thread. Returnt (ok, label, lines)."""
     label = page_slug or unit_key
@@ -1263,14 +1264,32 @@ def _run_unit_buffered(
         gen_cmd += ["--nav-pages", json.dumps(nav_pages)]
     if logo_path:
         gen_cmd += ["--logo-path", logo_path]
+    if no_backend:
+        gen_cmd += ["--no-backend"]
 
     MAX_RETRIES = 2
     for attempt in range(1, MAX_RETRIES + 2):
+        _t0 = time.monotonic()
+        log(f"[INFO] {label}: Claude aan het genereren...")
         proc = subprocess.run(gen_cmd, cwd=str(SCRIPTS_DIR), capture_output=True, text=True)
+        elapsed_total = int(time.monotonic() - _t0)
+
         lines.extend(proc.stdout.splitlines())
         if proc.stderr.strip():
             lines.append(f"[STDERR] {proc.stderr.strip()[:500]}")
+
         if proc.returncode == 0:
+            # Toon eerste zinvolle gegenereerde regel als preview
+            preview = ""
+            for l in proc.stdout.splitlines():
+                stripped = l.strip()
+                if stripped.startswith(("export ", "const ", "function ", "import ", "<")):
+                    preview = stripped[:80]
+                    break
+            lines.append(
+                f"[OK]  {label}: {elapsed_total}s"
+                + (f" — {preview}..." if preview else "")
+            )
             break
         if attempt <= MAX_RETRIES:
             lines.append(f"[WARN] generate:{label} mislukt (poging {attempt}) — herprobeert na 10s")
@@ -1366,6 +1385,63 @@ def step_generate_mail(name: str, n: int, total: int, prospect: str) -> bool:
     return run_cmd(cmd, "generate_mail", n, total, prospect)
 
 
+def _take_new_screenshot(site_dir: Path, out_path: Path) -> None:
+    """Maak een Playwright screenshot van de gegenereerde homepage."""
+    import socket as _socket
+    with _socket.socket() as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+    server = subprocess.Popen(
+        ["python3", "-m", "http.server", str(port), "--directory", str(site_dir)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    time.sleep(0.8)
+    try:
+        script = (
+            "from playwright.sync_api import sync_playwright\n"
+            "with sync_playwright() as p:\n"
+            "    b=p.chromium.launch()\n"
+            f"    pg=b.new_page(viewport={{'width':1280,'height':720}})\n"
+            f"    pg.goto('http://127.0.0.1:{port}/',wait_until='domcontentloaded',timeout=15000)\n"
+            "    pg.wait_for_timeout(1500)\n"
+            f"    pg.screenshot(path='{str(out_path)}')\n"
+            "    b.close()\n"
+        )
+        res = subprocess.run(["python3", "-c", script], capture_output=True, text=True, timeout=60)
+        if res.returncode == 0:
+            log(f"[OK]  Nieuwe-site screenshot: {out_path.name}")
+        else:
+            log(f"[WARN] Screenshot mislukt: {res.stderr[:200]}")
+    except Exception as e:
+        log(f"[WARN] Screenshot mislukt: {e}")
+    finally:
+        server.terminate()
+
+
+def step_inject_paywall(site_dir: Path, n: int, total: int, prospect: str,
+                        original_screenshot: Path | None = None,
+                        new_screenshot: Path | None = None) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "inject_paywall.py"),
+        "--site-dir", str(site_dir),
+    ]
+    if original_screenshot and original_screenshot.exists():
+        cmd += ["--original-screenshot", str(original_screenshot)]
+    if new_screenshot and new_screenshot.exists():
+        cmd += ["--new-screenshot", str(new_screenshot)]
+    return run_cmd(cmd, "inject_paywall", n, total, prospect)
+
+
+def step_fetch_stock_photos(data_slug: str, company_name: str,
+                            n: int, total: int, prospect: str) -> bool:
+    cmd = [
+        "python", str(SCRIPTS_DIR / "fetch_stock_photos.py"),
+        "--slug",    data_slug,
+        "--company", company_name,
+    ]
+    return run_cmd(cmd, "fetch_stock_photos", n, total, prospect)
+
+
 # ── Hulpfunctie: bouw de volledige unit-lijst op ──────────────────────────────
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
@@ -1433,6 +1509,58 @@ def build_units(pages: list[dict]) -> list[tuple]:
 # In Next.js is de layout gedeeld via src/app/layout.tsx — niet nodig meer.
 
 
+# ── API-kostenschatting ─────────────────────────────────────────────���─────────
+
+_PRICE     = {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30}
+_USD_TO_EUR = 0.92
+
+
+def _log_api_cost_estimate(collected_path: Path, project_dir: Path) -> None:
+    """Lees alle *.meta.json en bereken geschatte API-kosten voor deze run."""
+    slug_prefix = project_dir.name.replace("-next", "")
+    all_meta = (
+        list(Path("/workspace/output").glob(f"{slug_prefix}*.meta.json"))
+        + list(collected_path.glob("*.meta.json"))
+    )
+
+    input_tok = output_tok = cache_write = cache_read = 0
+    for mf in all_meta:
+        try:
+            u = json.loads(mf.read_text(encoding="utf-8")).get("usage") or {}
+            input_tok   += u.get("input_tokens",                0) or 0
+            output_tok  += u.get("output_tokens",               0) or 0
+            cache_write += u.get("cache_creation_input_tokens", 0) or 0
+            cache_read  += u.get("cache_read_input_tokens",     0) or 0
+        except Exception:
+            pass
+
+    if not (input_tok or output_tok):
+        return
+
+    cost_usd = (
+        input_tok   / 1_000_000 * _PRICE["input"]
+        + output_tok  / 1_000_000 * _PRICE["output"]
+        + cache_write / 1_000_000 * _PRICE["cache_write"]
+        + cache_read  / 1_000_000 * _PRICE["cache_read"]
+    )
+    cost_eur = cost_usd * _USD_TO_EUR
+    ok = cost_eur < 0.30
+
+    log(f"\n{'─' * 60}")
+    log(f"[INFO] API-kostenschatting (claude-sonnet-4-6):")
+    log(f"       Input:       {input_tok:>8,} tokens  × $3.00/M  = ${input_tok/1e6*3:.4f}")
+    log(f"       Output:      {output_tok:>8,} tokens  × $15.00/M = ${output_tok/1e6*15:.4f}")
+    if cache_write:
+        log(f"       Cache write: {cache_write:>8,} tokens  × $3.75/M  = ${cache_write/1e6*3.75:.4f}")
+    if cache_read:
+        log(f"       Cache read:  {cache_read:>8,} tokens  × $0.30/M  = ${cache_read/1e6*0.30:.4f}")
+    log(f"       {'─' * 42}")
+    log(f"       Totaal:  ${cost_usd:.4f}  ≈  €{cost_eur:.4f}")
+    tag = "[OK] " if ok else "[WARN]"
+    log(f"       {tag} {'Onder' if ok else 'BOVEN'} €0.30 limiet  (€{cost_eur:.3f} / site)")
+    log(f"{'─' * 60}\n")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1449,6 +1577,8 @@ def main():
     )
     parser.add_argument("--force", action="store_true",
                         help="Forceer opnieuw uitvoeren bij al voltooide stappen")
+    parser.add_argument("--homepage-only", action="store_true",
+                        help="Genereer alleen de homepage + paywall (geen subpagina's, geen research)")
     args = parser.parse_args()
 
     from_idx  = STEPS.index(args.from_step)
@@ -1527,7 +1657,9 @@ def main():
     # ── research ──────────────────────────────────────────────────────────────
     if from_idx <= STEPS.index("research"):
         n += 1
-        if prospect.get("research_status") == "done" and not args.force:
+        if args.homepage_only:
+            log("[INFO] research: overgeslagen (--homepage-only mode — bespaar ~€0.10)")
+        elif prospect.get("research_status") == "done" and not args.force:
             log("[INFO] research: overgeslagen (research_status=done)")
         else:
             if not step_research(company_name, args.force, n, total, company_name):
@@ -1581,6 +1713,14 @@ def main():
 
         image_manifest = save_image_manifest(collected_path)
 
+        # Stockfoto's ophalen als er te weinig afbeeldingen zijn (vereist PEXELS_API_KEY)
+        if os.getenv("PEXELS_API_KEY"):
+            n += 1
+            step_fetch_stock_photos(data_slug, company_name, n, total, company_name)
+            image_manifest = save_image_manifest(collected_path)  # hermaak manifest met stockfoto's
+        else:
+            log("[INFO] PEXELS_API_KEY niet ingesteld — stockfoto-fallback overgeslagen")
+
         # Ontdek pagina's
         n += 1
         pages = None
@@ -1598,14 +1738,22 @@ def main():
                 sys.exit(1)
 
         gen_units  = build_units(pages)
-        nav_routes = [""] + [u[2] for u in gen_units if u[0] == "page"]  # "" = home
+
+        if args.homepage_only:
+            # nav_routes uit pages.json (niet uit gen_units) zodat de header
+            # alle subpagina's toont, ook al worden ze niet gegenereerd.
+            nav_routes = [""] + [p["file"].replace(".html", "") for p in pages]
+            page_units = []
+            log(f"[INFO] homepage-only | nav-routes: {nav_routes}")
+        else:
+            nav_routes = [""] + [u[2] for u in gen_units if u[0] == "page"]
+            page_units = [u for u in gen_units if u[0] == "page"]
+            log(f"[INFO] Next.js | {len(page_units)} subpagina's | nav-routes: {nav_routes}")
 
         layout_unit = [u for u in gen_units if u[0] == "layout"]
         home_unit   = [u for u in gen_units if u[0] == "home"]
-        page_units  = [u for u in gen_units if u[0] == "page"]
 
         total = 6 + 1 + 1 + 1 + len(page_units) + 1 + 1  # scaffold+layout+home+pages+build+validate
-        log(f"[INFO] Next.js | {len(page_units)} subpagina's | nav-routes: {nav_routes}")
 
         # ── Stap 0: scaffold ─────────────────────────────────────────────────
         n += 1
@@ -1677,6 +1825,7 @@ def main():
             OUTPUT_DIR / f"{slug}-home.txt",
             None, "", "", "",
             image_manifest, nav_routes, project_dir,
+            no_backend=args.homepage_only,
         )
         for line in lines:
             log(line)
@@ -1690,44 +1839,47 @@ def main():
 
         # ── Fase 3: subpagina's parallel — vrije TSX-generatie door Claude ───
         failed_units: list[str] = []
-        batch_start = time.monotonic()
-        write_status(running=True, prospect=company_name, step="generate:parallel", step_n=n, total=total)
+        if not page_units:
+            log("[INFO] generate:parallel overgeslagen (homepage-only mode)")
+        else:
+            batch_start = time.monotonic()
+            write_status(running=True, prospect=company_name, step="generate:parallel", step_n=n, total=total)
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {
-                executor.submit(
-                    _run_unit_buffered,
-                    briefing_path, company_name, "page",
-                    OUTPUT_DIR / f"{slug}-{ps}.txt",
-                    ref_tsx, ps, pt, pd,
-                    image_manifest, nav_routes,
-                    project_dir,
-                ): ps
-                for _, _, ps, pt, pd in page_units
-            }
-            completed = 0
-            for future in as_completed(futures):
-                ok, label, lines = future.result()
-                completed += 1
-                for line in lines:
-                    log(line)
-                write_status(running=True, prospect=company_name,
-                             step=f"generate:{label}", step_n=n + completed, total=total)
-                if not ok:
-                    failed_units.append(label)
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {
+                    executor.submit(
+                        _run_unit_buffered,
+                        briefing_path, company_name, "page",
+                        OUTPUT_DIR / f"{slug}-{ps}.txt",
+                        ref_tsx, ps, pt, pd,
+                        image_manifest, nav_routes,
+                        project_dir,
+                    ): ps
+                    for _, _, ps, pt, pd in page_units
+                }
+                completed = 0
+                for future in as_completed(futures):
+                    ok, label, lines = future.result()
+                    completed += 1
+                    for line in lines:
+                        log(line)
+                    write_status(running=True, prospect=company_name,
+                                 step=f"generate:{label}", step_n=n + completed, total=total)
+                    if not ok:
+                        failed_units.append(label)
 
-        batch_duration = time.monotonic() - batch_start
-        _step_timings.append({
-            "step": f"generate:parallel ({len(page_units)} pagina's)",
-            "duration_s": round(batch_duration, 1),
-            "ok": not failed_units,
-        })
-        log(f"[INFO] Parallelle batch klaar in {_fmt_duration(batch_duration)}")
+            batch_duration = time.monotonic() - batch_start
+            _step_timings.append({
+                "step": f"generate:parallel ({len(page_units)} pagina's)",
+                "duration_s": round(batch_duration, 1),
+                "ok": not failed_units,
+            })
+            log(f"[INFO] Parallelle batch klaar in {_fmt_duration(batch_duration)}")
 
-        if failed_units:
-            log(f"[FAIL] Pagina-units mislukt: {', '.join(failed_units)}")
-            write_status(running=False, prospect=company_name, step="generate:parallel", result="failed")
-            sys.exit(1)
+            if failed_units:
+                log(f"[FAIL] Pagina-units mislukt: {', '.join(failed_units)}")
+                write_status(running=False, prospect=company_name, step="generate:parallel", result="failed")
+                sys.exit(1)
 
         n += len(page_units)
 
@@ -1787,10 +1939,14 @@ def main():
 
         # ── Content-check — kritieke issues blokkeren mark_site_done ──────────
         n += 1
-        content_ok = step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
-        if not content_ok:
-            log("[WARN] Content-check heeft kritieke issues — auto_repair wordt getriggerd")
-            update_prospect(company_name, ready_for_review=False, content_issues=True)
+        if args.homepage_only:
+            log("[INFO] content_check: overgeslagen (homepage-only mode — geen subpagina's verwacht)")
+            content_ok = True
+        else:
+            content_ok = step_check_content(validate_dir, collected_path, company_name, n, total, company_name)
+            if not content_ok:
+                log("[WARN] Content-check heeft kritieke issues — auto_repair wordt getriggerd")
+                update_prospect(company_name, ready_for_review=False, content_issues=True)
 
         # ── Screenshot-validatie ───────────────────────────────────────────────
         n += 1
@@ -1821,13 +1977,29 @@ def main():
 
         # ── Cohesion pass ──────────────────────────────────────────────────────
         n += 1
-        log("\n[INFO] Cohesion pass uitvoeren...")
-        step_cohesion_pass(validate_dir, n, total, company_name)
+        if args.homepage_only:
+            log("[INFO] cohesion_pass: overgeslagen (homepage-only mode — geen subpagina's)")
+        else:
+            log("\n[INFO] Cohesion pass uitvoeren...")
+            step_cohesion_pass(validate_dir, n, total, company_name)
 
         # ── Polish ─────────────────────────────────────────────────────────────
         n += 1
         log("\n[INFO] Polish uitvoeren...")
         step_polish_site(validate_dir, company_name, n, total, company_name, collected_path)
+
+        # ── Paywall injecteren (homepage-only mode) ───────────────────────────
+        if args.homepage_only:
+            n += 1
+            log("\n[INFO] Paywall injecteren...")
+            # Maak eerst screenshot van de nieuwe site
+            new_shot = project_dir / "screenshot_homepage.png"
+            if not new_shot.exists():
+                _take_new_screenshot(validate_dir, new_shot)
+            orig_shot = collected_path / "original_screenshot.png"
+            step_inject_paywall(validate_dir, n, total, company_name,
+                                original_screenshot=orig_shot,
+                                new_screenshot=new_shot)
 
         # ── Outreach-mail genereren ───────────────────────────────────────────
         n += 1
@@ -1840,12 +2012,16 @@ def main():
     except Exception as e:
         log(f"[WARN] Timings opslaan mislukt: {e}")
 
+    # ── API-kostenschatting (geldt ook als Max gebruikt werd — toont wat API zou kosten) ──
+    _log_api_cost_estimate(collected_path, OUTPUT_DIR / f"{slug}-next")
+
     # ── Repair-and-retry loop — max 2 rondes ──────────────────────────────────
     MAX_REPAIR_ROUNDS = 3  # round 1: CSS, round 2: page-regen, round 3: safe fallback
 
     def _build_quality(vdir: Path, jout: Path) -> dict:
         """Bouw quality_report op basis van alle validatie-outputs."""
         q: dict = {"prospect": company_name, "checks": {}, "ready": True, "blockers": []}
+        homepage_only = args.homepage_only
 
         q["checks"]["build"] = "pass" if (vdir / "index.html").exists() else "fail"
         if q["checks"]["build"] == "fail":
@@ -1869,7 +2045,9 @@ def main():
             q["checks"]["validate"] = "not_run"
 
         cv = vdir / "content_validation.json"
-        if cv.exists():
+        if homepage_only:
+            q["checks"]["content"] = "skip"  # subpagina's bestaan niet intentioneel
+        elif cv.exists():
             try:
                 cvd = json.loads(cv.read_text(encoding="utf-8"))
                 q["checks"]["content"] = "pass" if cvd.get("ready") else "fail"

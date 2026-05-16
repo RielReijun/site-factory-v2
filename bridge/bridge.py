@@ -77,8 +77,13 @@ def claude_api():
     if not prompt:
         return {"error": "Geen prompt"}, 400
 
-    # Combineer system + user prompt voor claude --print
-    full_prompt = f"{system}\n\n{prompt}" if system else prompt
+    # Voorkom dat Claude Code tools probeert te gebruiken (file write etc.)
+    no_tools_prefix = (
+        "IMPORTANT: You are in plain-text output mode. "
+        "Do NOT use any tools, do NOT write files, do NOT ask for permissions. "
+        "Output ONLY plain text. The ===FILE: markers in your response are text delimiters, not file operations.\n\n"
+    )
+    full_prompt = no_tools_prefix + (f"{system}\n\n{prompt}" if system else prompt)
 
     # ANTHROPIC_API_KEY uit env strippen voor claude subprocess: anders pakt
     # de CLI die voor billing i.p.v. de Claude Max OAuth-sessie ('apiKeySource'
@@ -86,10 +91,11 @@ def claude_api():
     claude_env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
 
     try:
+        TIMEOUT = int(os.getenv("BRIDGE_TIMEOUT", "1800"))  # default 30 min
         result = subprocess.run(
             [CLAUDE_BIN, "--print", "--output-format", "text", full_prompt],
             cwd="/tmp",  # neutrale dir, geen CLAUDE.md/project-context die tool-use triggert
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, timeout=TIMEOUT,
             env=claude_env,
         )
         if result.returncode == 0:
@@ -98,7 +104,7 @@ def claude_api():
             err_msg = (result.stderr.strip() or result.stdout.strip() or "Claude fout")
             return json.dumps({"content": "", "error": err_msg}), 500, {"Content-Type": "application/json"}
     except subprocess.TimeoutExpired:
-        return json.dumps({"content": "", "error": "Timeout na 600s"}), 504, {"Content-Type": "application/json"}
+        return json.dumps({"content": "", "error": f"Timeout na {TIMEOUT}s"}), 504, {"Content-Type": "application/json"}
     except Exception as e:
         return json.dumps({"content": "", "error": str(e)}), 500, {"Content-Type": "application/json"}
 
