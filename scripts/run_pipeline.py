@@ -816,22 +816,42 @@ def _fix_globals_css(project_dir: Path, collected_path: Path | None = None) -> N
     has_import = "@import" in css and "tailwindcss" in css
     has_v3     = "@tailwind base" in css or "@tailwind components" in css or "@tailwind utilities" in css
 
-    # Genereer volledig kleurenpalet vanuit merkkleur(en) in de briefing
+    # Genereer volledig kleurenpalet — brand_colors.json (Playwright) heeft voorrang op briefing
     brand_css = ""
     if collected_path:
-        briefing_file = collected_path / "briefing.md"
-        if briefing_file.exists():
+        from color_utils import extract_colors_from_briefing, generate_palette, palette_to_css
+        primary = secondary = None
+
+        # 1. Probeer brand_colors.json (Playwright computed styles — betrouwbaarder)
+        brand_colors_file = collected_path / "brand_colors.json"
+        if brand_colors_file.exists():
             try:
-                from color_utils import extract_colors_from_briefing, generate_palette, palette_to_css
-                brief = briefing_file.read_text(encoding="utf-8", errors="ignore")
-                primary, secondary = extract_colors_from_briefing(brief)
+                bc = json.loads(brand_colors_file.read_text(encoding="utf-8"))
+                primary   = bc.get("primary")
+                secondary = bc.get("secondary")
                 if primary:
-                    palette  = generate_palette(primary, secondary)
-                    brand_css = "\n" + palette_to_css(palette)
-                    log(f"[OK]  globals.css: kleurenpalet gegenereerd vanuit {primary}"
-                        + (f" + {secondary}" if secondary else ""))
+                    log(f"[OK]  globals.css: brand-kleur uit Playwright: {primary}")
             except Exception as e:
-                log(f"[WARN] kleurenpalet genereren mislukt: {e}")
+                log(f"[WARN] brand_colors.json lezen mislukt: {e}")
+
+        # 2. Fallback: extraheer uit briefing.md
+        if not primary:
+            briefing_file = collected_path / "briefing.md"
+            if briefing_file.exists():
+                try:
+                    brief = briefing_file.read_text(encoding="utf-8", errors="ignore")
+                    primary, secondary = extract_colors_from_briefing(brief)
+                    if primary:
+                        log(f"[OK]  globals.css: kleur uit briefing: {primary}")
+                except Exception as e:
+                    log(f"[WARN] kleurenpalet genereren mislukt: {e}")
+
+        if primary:
+            try:
+                palette   = generate_palette(primary, secondary)
+                brand_css = "\n" + palette_to_css(palette)
+            except Exception as e:
+                log(f"[WARN] palette genereren mislukt: {e}")
 
     header = '@import "tailwindcss";\n@plugin "daisyui";\n@plugin "@tailwindcss/typography";\n@plugin "@tailwindcss/forms";\n\n'
 

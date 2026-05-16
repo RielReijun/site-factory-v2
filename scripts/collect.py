@@ -645,6 +645,31 @@ def get_next_pending_prospect(prospects: list) -> tuple[int, dict] | tuple[None,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _extract_brand_colors(url: str, target_dir: Path) -> None:
+    """Extraheer brand-kleuren via Playwright computed styles.
+
+    Werkt voor JS-heavy sites (React/Next.js) waar CSS gebundeld is in JS.
+    Sla op als brand_colors.json — heeft voorrang op briefing-kleurextractie.
+    """
+    out_path = target_dir / "brand_colors.json"
+    if out_path.exists():
+        return
+    try:
+        import subprocess, sys, json as _json
+        helper = Path(__file__).parent / "extract_brand_colors.py"
+        result = subprocess.run(
+            [sys.executable, str(helper), "--url", url, "--out", str(out_path)],
+            capture_output=True, text=True, timeout=45,
+        )
+        if result.returncode == 0 and out_path.exists():
+            data = _json.loads(out_path.read_text())
+            print(f"[OK]  Brand-kleur geëxtraheerd: {data.get('primary')} (via Playwright)")
+        else:
+            print(f"[WARN] Brand-kleurextractie mislukt: {result.stderr[:150]}")
+    except Exception as e:
+        print(f"[WARN] Brand-kleurextractie mislukt: {e}")
+
+
 def _take_original_screenshot(url: str, target_dir: Path) -> None:
     """Maak een screenshot van de originele site voor de voor/na vergelijking."""
     out_path = target_dir / "original_screenshot.png"
@@ -763,6 +788,9 @@ def main():
         from prospects_utils import update_prospect
         update_prospect(name, status="collected", collected_path=str(target_dir))
         print("[OK] Prospect status bijgewerkt naar 'collected'")
+
+        # ── Brand-kleuren extracteren via Playwright (computed styles) ───────
+        _extract_brand_colors(url, target_dir)
 
         # ── Screenshot van de originele site (voor/na vergelijking) ─────────
         _take_original_screenshot(url, target_dir)

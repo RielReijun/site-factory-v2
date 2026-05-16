@@ -128,7 +128,8 @@ def build_prompt(company_name: str, url: str, meta: dict, site_text: str,
                  css_text: str = "", research_text: str = "", images: list[str] | None = None,
                  structured_data: dict | None = None,
                  reference_text: str = "", reference_url: str = "",
-                 reference_css: str = "") -> str:
+                 reference_css: str = "",
+                 brand_colors: dict | None = None) -> str:
     trimmed_text  = site_text[:MAX_SITE_TEXT_CHARS]
 
     css_section = ""
@@ -231,7 +232,7 @@ NB: de inventory bevat al een gemeten je/u-vorm en formality — bevestig of cor
 
 ## Designrichting
 Max 12 bullets. Gebruik exacte hex-codes uit de CSS waar beschikbaar:
-- Primaire kleur: #...
+{f"- Primaire kleur: {brand_colors['primary']} ← VERPLICHT, geëxtraheerd via Playwright computed styles" if brand_colors and brand_colors.get('primary') else "- Primaire kleur: #..."}
 - Secundaire kleur: #...
 - Achtergrond: #...
 - Tekst: #...
@@ -298,6 +299,12 @@ def main():
     site_text = read_text_file(text_path)
     css_text  = extract_css(target_dir)
     research_text = read_text_file(briefing_path.parent / "research.md")
+
+    # Brand-kleuren uit Playwright (betrouwbaarder dan CSS-extractie)
+    brand_colors_path = target_dir / "brand_colors.json"
+    brand_colors = json.loads(brand_colors_path.read_text(encoding="utf-8")) if brand_colors_path.exists() else None
+    if brand_colors:
+        print(f"[INFO] Brand-kleur uit Playwright: {brand_colors.get('primary')} — wordt als primaire kleur in briefing gezet")
     images    = list_images(target_dir)
 
     sd_path = target_dir / "structured_data.json"
@@ -339,7 +346,8 @@ def main():
                           css_text=css_text, research_text=research_text, images=images,
                           structured_data=structured_data,
                           reference_text=reference_text, reference_url=reference_url,
-                          reference_css=reference_css)
+                          reference_css=reference_css,
+                          brand_colors=brand_colors)
 
     from pipeline_utils import with_retry
     from config import RETRY_BASE_WAIT, MAX_RATE_RETRIES

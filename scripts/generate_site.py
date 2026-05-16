@@ -151,10 +151,22 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _load_brand_colors(brief_path: Path) -> dict:
+    """Lees brand_colors.json naast briefing.md (gegenereerd door Playwright)."""
+    p = brief_path.parent / "brand_colors.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def common_rules(briefing: str, company_name: str,
                  images: list[str] | None = None,
                  nav_pages: list[str] | None = None,
-                 inventory: dict | None = None) -> str:
+                 inventory: dict | None = None,
+                 brand_colors: dict | None = None) -> str:
     impeccable = _load_impeccable()
     impeccable_section = f"""
 ## Design referentie (Impeccable)
@@ -192,11 +204,24 @@ Er zijn GEEN lokale afbeeldingen beschikbaar. Gebruik daarom:
     inventory_block = _inventory_facts_block(inventory or {})
     inventory_section = f"\n{inventory_block}\n" if inventory_block else ""
 
+    brand_color_section = ""
+    if brand_colors and brand_colors.get("primary"):
+        pc = brand_colors["primary"]
+        brand_color_section = f"""
+## Brand-kleur (VERPLICHT — gebruik NOOIT standaard Tailwind-blauw)
+De primaire brand-kleur is **`{pc}`**.
+- Gebruik `{pc}` voor: CTA-knoppen, accenten, highlights, links, hover-states
+- Gebruik `bg-[{pc}]`, `text-[{pc}]`, `border-[{pc}]` als Tailwind utility
+- NOOIT: `blue-500`, `blue-600`, `#2563eb`, `#1d4ed8`, `#3b82f6` of andere standaard Tailwind-blauw
+- NOOIT: `indigo-500`, `indigo-600` of andere standaard kleuren als primaire accent
+
+"""
+
     return f"""Je bent een senior React/Next.js developer en webdesigner.
 
 Genereer Next.js 14 (App Router) TypeScript bestanden voor {company_name}.
 Gebruik Tailwind CSS voor alle styling — geen aparte CSS tenzij expliciet gevraagd.
-{impeccable_section}{image_section}{inventory_section}
+{impeccable_section}{brand_color_section}{image_section}{inventory_section}
 ## Navigatielinks — gebruik ALTIJD echte routes
 Gebruik in navigatie en CTA-knoppen ALTIJD de echte route-URL:
 - `href="/over-ons/"` — NOOIT `href="#"`
@@ -475,9 +500,10 @@ def build_prompt(briefing: str, company_name: str, unit: str,
                  nav_pages: list[str] | None = None,
                  logo_path: str = "",
                  inventory: dict | None = None,
-                 no_backend: bool = False) -> tuple[str, str]:
+                 no_backend: bool = False,
+                 brand_colors: dict | None = None) -> tuple[str, str]:
     base      = common_rules(briefing, company_name, images=images, nav_pages=nav_pages,
-                             inventory=inventory)
+                             inventory=inventory, brand_colors=brand_colors)
     unit_part = build_unit_part(unit, ref_tsx=ref_tsx, page_slug=page_slug,
                                 page_title=page_title, page_desc=page_desc,
                                 logo_path=logo_path, no_backend=no_backend)
@@ -524,6 +550,9 @@ def main():
 
     briefing = read_text(Path(args.brief))
     inventory = _load_inventory(Path(args.brief))
+    brand_colors = _load_brand_colors(Path(args.brief))
+    if brand_colors.get("primary"):
+        print(f"[INFO] Brand-kleur geladen: {brand_colors['primary']} (Playwright)")
     if inventory:
         n_p = len(inventory.get("prices") or [])
         n_t = len(inventory.get("treatments") or [])
@@ -570,6 +599,7 @@ def main():
         logo_path=args.logo_path,
         inventory=inventory,
         no_backend=args.no_backend,
+        brand_colors=brand_colors,
     )
 
     # Op Claude Max OAuth duren grote responses via 'claude --print' soms
