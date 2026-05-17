@@ -57,33 +57,37 @@ def main():
     prompt = f"""Je schrijft een korte, persoonlijke cold-outreach e-mail namens {agency_name or 'een webdesigner'}.
 
 Situatie:
-- Jij hebt pro-actief een NIEUWE HOMEPAGE gebouwd voor {company} als demo
+- Je hebt pro-actief een nieuwe homepage gebouwd voor {company} op basis van hun bestaande site
 - De demo staat live op: {demo_url}
-- Wat je hebt gebouwd: alleen de homepage, volledig opnieuw ontworpen op basis van hun huidige site
-- Wat nog NIET is gebouwd: de rest van de pagina's (over ons, diensten, contact, etc.)
-- Prijs: €499 voor de complete website (homepage + alle overige pagina's afmaken + overdracht van alle bestanden)
-- Hosting en onderhoud bespreek je in een vervolgcontact, noem dit NIET in de mail
-- Jij regelt alles: het overzetten en live zetten. Zij hoeven niks te doen.
+- Wat je hebt gebouwd: alleen de homepage, volledig opnieuw ontworpen
+- Wat nog niet gebouwd is: de overige pagina's (die maak je af als ze ja zeggen)
+- Prijs: €499 voor de complete website (homepage + alle overige pagina's + overdracht van alle bestanden)
+- Hosting en onderhoud bespreek je alleen als ze reageren, noem dit NIET in de mail
 
 Toon:
-- Kort, direct en menselijk, geen marketingtaal
+- Kort, direct, menselijk, geen marketingtaal
 - Geen bulleted lijstjes, geen headers, gewone alinea's
-- Maximaal 3 korte alinea's
-- Wees eerlijk en transparant: benoem duidelijk dat je de homepage hebt gebouwd als showcase, en dat de volledige prijs van €499 ook het afmaken van de rest inhoudt
-- Noem de prijs zelfverzekerd, zonder je te verontschuldigen
-- Geen zwakke slotformule zoals "het is nog niet af". Sluit positief af: dit is al het bewijs dat je weet wat je doet, en voor €499 lever je het compleet af
-- Daarna alleen de naam van de afzender, geen verdere afsluiting
+- Maximaal 3 korte alinea's (totaal max 120 woorden)
+- Benoem 1 of 2 CONCRETE problemen die je zag op hun huidige site (gebruik de context hieronder)
+- Benoem 1 CONCREET verschil dat je hebt aangebracht in de demo (niet generiek: "mooier" of "sneller")
+- Wees transparant: je hebt de homepage gebouwd als showcase. De €499 is voor het complete werk
+- Sluit zelfverzekerd af, geen verontschuldigingen, geen "het is nog niet af"
+- Alleen voornaam als afsluiting, geen titel of verdere info
 
-Bedrijfscontext uit de briefing:
-{briefing[:3000]}
+Wat er mis was op de originele site en wat je hebt verbeterd (haal hier de 1-2 beste, meest specifieke punten uit):
+{briefing[briefing.find('## Gewenste verbeteringen') if '## Gewenste verbeteringen' in briefing else briefing.find('## Problemen') if '## Problemen' in briefing else 0:briefing.find('## Tone') if '## Tone' in briefing else 3000][:1500]}
+
+Volledige briefing context:
+{briefing[:2000]}
 
 Genereer:
-1. Een onderwerpregel (prefix: "Onderwerp: ")
+1. Een onderwerpregel (prefix: "Onderwerp: ") — prikkelend, specifiek, geen clickbait
 2. De e-mailtekst
 
-Schrijf in het Nederlands. Noem iets specifieks over hun bedrijf zodat het niet generiek aanvoelt.
-Verwijs expliciet naar de demo-URL: {demo_url}
-Gebruik GEEN em-dashes (—). Gebruik een komma of punt waar dat natuurlijker klinkt.
+Schrijf in het Nederlands.
+Verwijs naar de demo-URL: {demo_url}
+Gebruik GEEN em-dashes (—).
+Noem €499 letterlijk in de mail.
 """
 
     client = get_claude_client(api_key)
