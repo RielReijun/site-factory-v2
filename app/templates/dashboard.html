@@ -398,25 +398,27 @@ function renderGrid(prospects) {
 
     return `
     <div class="sf-card cursor-pointer overflow-hidden ${currentSlug===slug?'active':''}" onclick="openDetail('${slug}')" data-slug="${slug}">
-      <div class="relative">${thumb}
+      <div class="relative">
+        ${thumb}
         ${isRunning ? '<div class="absolute top-2 right-2"><span class="pulse-dot"></span></div>' : ''}
         <div class="absolute top-2 left-2"><span class="brand-dot" style="background:${color};opacity:.9;width:8px;height:8px"></span></div>
-        ${p.site_url && !isRunning ? `<a href="${p.site_url}" target="_blank" onclick="event.stopPropagation()"
-          class="absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm transition-all"
-          title="Bekijk gegenereerde site">
-          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:inline;margin-right:3px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>Bekijk site</a>` : ''}
       </div>
       <div class="p-4">
         <div class="flex items-start justify-between gap-2 mb-1">
           <div class="font-semibold text-sm truncate">${esc(p.name)}</div>
           ${getStatusBadge(p)}
         </div>
-        <div class="text-xs text-gray-500 truncate mb-3">${esc(p.url||'')}</div>
-        <div class="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-          ${costEur  ? `<span>💰 €${costEur.toFixed(3)}</span>` : ''}
-          ${dur      ? `<span>⏱ ${dur}</span>` : ''}
-          ${p.page_count ? `<span>📄 ${p.page_count}</span>` : ''}
-          ${p.homepage_only && p.site_status === 'done' ? `<span class="text-amber-400 font-semibold">◑ Homepage only</span>` : ''}
+        <div class="text-xs text-gray-500 truncate mb-2">${esc(p.url||'')}</div>
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+            ${costEur  ? `<span>💰 €${costEur.toFixed(3)}</span>` : ''}
+            ${dur      ? `<span>⏱ ${dur}</span>` : ''}
+            ${p.page_count ? `<span>📄 ${p.page_count}</span>` : ''}
+            ${p.homepage_only && p.site_status === 'done' ? `<span class="text-amber-400 font-semibold">◑ Homepage only</span>` : ''}
+          </div>
+          ${p.site_url ? `<a href="${p.site_url}" target="_blank" onclick="event.stopPropagation()"
+            class="text-xs text-purple-400 hover:text-purple-300 font-semibold flex-shrink-0 flex items-center gap-1">
+            Bekijk →</a>` : ''}
         </div>
       </div>
     </div>`;
