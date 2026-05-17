@@ -256,6 +256,7 @@ def enrich_prospect(p: dict) -> dict:
         "has_original_screenshot": has_original_screenshot,
         "brand_color":             brand_color,
         "total_duration_s":        total_duration_s,
+        "homepage_only":           p.get("homepage_only", False),
     }
 
 
@@ -1507,7 +1508,7 @@ def api_run_pipeline(slug):
             return jsonify({"ok": False, "error": "Pipeline draait al"}), 409
 
         company_name = p["name"]
-        update_prospect(company_name, status="running")
+        update_prospect(company_name, status="running", homepage_only=homepage_only)
 
         def run_bg(cn=company_name, fs=from_step, ho=homepage_only):
             cmd = [

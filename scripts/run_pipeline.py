@@ -135,8 +135,9 @@ def find_next_prospect(prospects: list) -> str | None:
     return None
 
 
-def mark_site_done(name: str) -> None:
-    update_prospect(name, status="collected", site_status="done")
+def mark_site_done(name: str, homepage_only: bool = False) -> None:
+    update_prospect(name, status="collected", site_status="done",
+                    homepage_only=homepage_only)
 
 
 def slugify(name: str) -> str:
@@ -2183,7 +2184,7 @@ def main():
     # ── Definitieve status ─────────────────────────────────────────────────────
     ready = quality["ready"]
     if ready:
-        mark_site_done(company_name)
+        mark_site_done(company_name, homepage_only=args.homepage_only)
         update_prospect(company_name, review_status="ready")
         log("[OK]  Pipeline voltooid — site verkoopbaar")
     else:

@@ -269,6 +269,10 @@
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Opnieuw draaien
     </button>
+    <button id="dp-fullsite-btn" class="sf-btn hidden" style="background:rgba(251,191,36,.15);color:#fbbf24" onclick="generateFullSite()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      Genereer volledige site
+    </button>
     <button class="sf-btn sf-btn-ghost" onclick="copyMail()">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       Kopieer mail
@@ -400,10 +404,11 @@ function renderGrid(prospects) {
           ${getStatusBadge(p)}
         </div>
         <div class="text-xs text-gray-500 truncate mb-3">${esc(p.url||'')}</div>
-        <div class="flex items-center gap-3 text-xs text-gray-500">
+        <div class="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
           ${costEur  ? `<span>💰 €${costEur.toFixed(3)}</span>` : ''}
           ${dur      ? `<span>⏱ ${dur}</span>` : ''}
           ${p.page_count ? `<span>📄 ${p.page_count}</span>` : ''}
+          ${p.homepage_only && p.site_status === 'done' ? `<span class="text-amber-400 font-semibold">◑ Homepage only</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -469,6 +474,14 @@ async function openDetail(slug) {
   const previewBtn = document.getElementById('dp-preview-btn');
   if (d.site_url) { previewBtn.href = d.site_url; previewBtn.classList.remove('hidden'); }
   else previewBtn.classList.add('hidden');
+
+  // "Genereer volledige site" knop: alleen tonen als homepage_only en klaar
+  const fullBtn = document.getElementById('dp-fullsite-btn');
+  if (d.homepage_only && d.site_status === 'done') {
+    fullBtn.classList.remove('hidden');
+  } else {
+    fullBtn.classList.add('hidden');
+  }
 
   const baSection   = document.getElementById('dp-ba-section');
   const shotSection = document.getElementById('dp-shot-section');
@@ -620,6 +633,26 @@ async function trashProspect() {
   await fetch('/api/prospects/'+currentSlug+'/trash', {method:'POST'});
   closeDetail();
   await loadProspects();
+}
+
+async function generateFullSite() {
+  if (!currentSlug || !confirm('De volledige site genereren? Dit vervangt de homepage-only versie en duurt langer.')) return;
+  const btn = document.getElementById('dp-fullsite-btn');
+  btn.disabled = true; btn.textContent = '⟳ Starten…';
+  const r = await fetch('/api/prospects/'+currentSlug+'/run', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({from_step: 'generate', homepage_only: false}),
+  }).then(r=>r.json()).catch(()=>({ok:false,error:'Netwerk fout'}));
+  if (r.ok) {
+    btn.classList.add('hidden');
+    await loadProspects();
+    streamLog(currentSlug);
+  } else {
+    btn.disabled = false;
+    btn.textContent = '▲ Genereer volledige site';
+    alert(r.error || 'Fout bij starten');
+  }
 }
 
 function copyMail() {
