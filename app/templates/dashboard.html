@@ -265,6 +265,10 @@
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
       Preview
     </a>
+    <a id="dp-original-btn" href="#" target="_blank" class="sf-btn sf-btn-ghost hidden">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      Originele site
+    </a>
     <button id="dp-run-btn" class="sf-btn sf-btn-primary" onclick="runPipeline()">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Opnieuw draaien
@@ -474,6 +478,10 @@ async function openDetail(slug) {
   const previewBtn = document.getElementById('dp-preview-btn');
   if (d.site_url) { previewBtn.href = d.site_url; previewBtn.classList.remove('hidden'); }
   else previewBtn.classList.add('hidden');
+
+  const origBtn = document.getElementById('dp-original-btn');
+  if (d.url) { origBtn.href = d.url; origBtn.classList.remove('hidden'); }
+  else origBtn.classList.add('hidden');
 
   // "Genereer volledige site" knop: alleen tonen als homepage_only en klaar
   const fullBtn = document.getElementById('dp-fullsite-btn');
