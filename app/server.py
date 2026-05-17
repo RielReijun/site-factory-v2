@@ -216,20 +216,46 @@ def enrich_prospect(p: dict) -> dict:
     else:
         site_url = None
 
+    # Screenshots beschikbaar
+    has_screenshot = (OUTPUT_DIR / f"{slug}-next" / "screenshot_homepage.png").exists()
+    cp = p.get("collected_path")
+    has_original_screenshot = bool(cp) and (Path(cp) / "original_screenshot.png").exists() if cp else False
+
+    # Brand-kleur
+    brand_color = None
+    if cp:
+        bc_path = Path(cp) / "brand_colors.json"
+        if bc_path.exists():
+            try:
+                brand_color = json.loads(bc_path.read_text(encoding="utf-8")).get("primary")
+            except Exception:
+                pass
+
+    # Totale duur uit timings.json
+    total_duration_s = None
+    if cp:
+        t = _read_meta(Path(cp) / "timings.json")
+        if t:
+            total_duration_s = t.get("total_duration_s")
+
     return {
         **p,
-        "slug":           slug,
-        "site_url":       site_url,
-        "stages":         stages,
-        "all_done":       all(stages.values()),
-        "failed":         p.get("status") == "failed",
-        "deploy_status":  p.get("deploy_status", ""),
-        "github_url":     p.get("github_url", ""),
-        "cloudflare_url": p.get("cloudflare_url", ""),
-        "total_cost":     round(total_cost, 4),
-        "page_count":     page_count,
-        "readiness":      readiness,
-        "needs_review":   p.get("review_status") == "needs_review",
+        "slug":                    slug,
+        "site_url":                site_url,
+        "stages":                  stages,
+        "all_done":                all(stages.values()),
+        "failed":                  p.get("status") == "failed",
+        "deploy_status":           p.get("deploy_status", ""),
+        "github_url":              p.get("github_url", ""),
+        "cloudflare_url":          p.get("cloudflare_url", ""),
+        "total_cost":              round(total_cost, 4),
+        "page_count":              page_count,
+        "readiness":               readiness,
+        "needs_review":            p.get("review_status") == "needs_review",
+        "has_screenshot":          has_screenshot,
+        "has_original_screenshot": has_original_screenshot,
+        "brand_color":             brand_color,
+        "total_duration_s":        total_duration_s,
     }
 
 
@@ -1376,6 +1402,216 @@ def serve_site_file(slug, filename):
     if target.is_dir() and (target / "index.html").exists():
         return send_from_directory(str(target), "index.html")
     return send_from_directory(str(site_dir), filename)
+
+
+# ── Dashboard v2 API ─────────────────────────────────────────────────────────
+
+@app.get("/api/prospects/<slug>/screenshot")
+def api_screenshot(slug):
+    """Serve de screenshot van de gegenereerde site als PNG."""
+    shot = OUTPUT_DIR / f"{slug}-next" / "screenshot_homepage.png"
+    if not shot.exists():
+        abort(404)
+    return send_from_directory(str(shot.parent), shot.name, mimetype="image/png")
+
+
+@app.get("/api/prospects/<slug>/original-screenshot")
+def api_original_screenshot(slug):
+    """Serve de screenshot van de originele site als PNG."""
+    for p in load_prospects():
+        if slugify(p.get("name", "")) == slug:
+            cp = p.get("collected_path")
+            if cp:
+                shot = Path(cp) / "original_screenshot.png"
+                if shot.exists():
+                    return send_from_directory(str(shot.parent), shot.name, mimetype="image/png")
+    abort(404)
+
+
+@app.get("/api/prospects/<slug>/details")
+def api_prospect_details(slug):
+    """Geeft uitgebreide details voor een prospect: timing, kosten, mail, brand-kleur."""
+    for p in load_prospects():
+        if slugify(p.get("name", "")) != slug:
+            continue
+
+        result = dict(p)
+        cp = p.get("collected_path")
+
+        # Timings
+        timings = []
+        total_duration_s = None
+        if cp:
+            t = _read_meta(Path(cp) / "timings.json")
+            if t:
+                timings = t.get("steps", [])
+                total_duration_s = t.get("total_duration_s")
+        result["timings"] = timings
+        result["total_duration_s"] = total_duration_s
+
+        # Kosten
+        costs = get_prospect_costs(p)
+        result["total_cost"] = round(sum(c["cost"] for c in costs), 4)
+        result["costs"] = costs
+
+        # Brand-kleur
+        brand_color = None
+        if cp:
+            bc_path = Path(cp) / "brand_colors.json"
+            if bc_path.exists():
+                try:
+                    brand_color = json.loads(bc_path.read_text(encoding="utf-8")).get("primary")
+                except Exception:
+                    pass
+        result["brand_color"] = brand_color
+
+        # Outreach mail
+        mail = None
+        mail_path = p.get("mail_path", "")
+        if not mail_path and cp:
+            mp = Path(cp) / "outreach_mail.txt"
+            if mp.exists():
+                mail_path = str(mp)
+        if mail_path and Path(mail_path).exists():
+            mail = Path(mail_path).read_text(encoding="utf-8", errors="ignore")
+        result["mail"] = mail
+
+        # Screenshots beschikbaar?
+        result["has_screenshot"] = (OUTPUT_DIR / f"{slug}-next" / "screenshot_homepage.png").exists()
+        result["has_original_screenshot"] = bool(cp) and (Path(cp) / "original_screenshot.png").exists() if cp else False
+
+        # Site URL
+        site_dir = _find_site_dir(slug)
+        result["has_site"] = site_dir.is_dir() and (site_dir / "index.html").exists()
+
+        return jsonify(result)
+
+    abort(404)
+
+
+@app.post("/api/prospects/<slug>/run")
+def api_run_pipeline(slug):
+    """Start een pipeline-run voor een prospect (homepage-only mode)."""
+    data      = request.get_json(silent=True) or {}
+    from_step = data.get("from_step", "collect")
+    homepage_only = data.get("homepage_only", True)
+
+    if from_step not in ("collect", "research", "brief", "generate", "validate"):
+        return jsonify({"ok": False, "error": f"Ongeldige from_step: {from_step}"}), 400
+
+    prospects = load_prospects()
+    for p in prospects:
+        if slugify(p.get("name", "")) != slug:
+            continue
+        if p.get("status") == "running":
+            return jsonify({"ok": False, "error": "Pipeline draait al"}), 409
+
+        company_name = p["name"]
+        update_prospect(company_name, status="running")
+
+        def run_bg(cn=company_name, fs=from_step, ho=homepage_only):
+            cmd = [
+                "python", str(SCRIPTS_DIR / "run_pipeline.py"),
+                "--name", cn,
+                "--from-step", fs,
+            ]
+            if ho:
+                cmd.append("--homepage-only")
+
+            run_log = RUN_LOG_DIR / f"{slugify(cn)}.log"
+            run_log.parent.mkdir(parents=True, exist_ok=True)
+            with run_log.open("w", encoding="utf-8") as lf:
+                proc = subprocess.Popen(
+                    cmd, cwd=str(SCRIPTS_DIR),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    env={**os.environ},
+                )
+                for line in proc.stdout:
+                    lf.write(line)
+                    lf.flush()
+                    with LOG_FILE.open("a", encoding="utf-8") as glf:
+                        glf.write(line)
+                proc.wait()
+
+        threading.Thread(target=run_bg, daemon=True).start()
+        return jsonify({"ok": True, "name": company_name, "from_step": from_step})
+
+    abort(404)
+
+
+@app.get("/api/prospects/<slug>/stream-log")
+def api_stream_log(slug):
+    """SSE: stream de run-log van een specifieke prospect live."""
+    import time as _time
+
+    log_path = RUN_LOG_DIR / f"{slug}.log"
+
+    def generate():
+        pos = 0
+        # Stuur bestaande regels
+        if log_path.exists():
+            lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+            for line in lines[-200:]:
+                yield f"data: {line}\n\n"
+            pos = log_path.stat().st_size
+
+        # Tail nieuwe regels (max 5 min)
+        deadline = _time.monotonic() + 300
+        while _time.monotonic() < deadline:
+            if log_path.exists():
+                size = log_path.stat().st_size
+                if size > pos:
+                    with log_path.open("rb") as f:
+                        f.seek(pos)
+                        new = f.read(size - pos).decode("utf-8", errors="ignore")
+                    pos = size
+                    for line in new.splitlines():
+                        yield f"data: {line}\n\n"
+                    # Stop als pipeline klaar is
+                    if any(x in new for x in ("[OK] Pipeline voltooid", "[FAIL] Pipeline", "site verkoopbaar", "auto_failed")):
+                        yield "data: [STREAM_DONE]\n\n"
+                        return
+            _time.sleep(0.5)
+        yield "data: [STREAM_DONE]\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/stats")
+def api_stats():
+    """Globale statistieken voor het dashboard-overzicht."""
+    prospects = [p for p in load_prospects() if p.get("status") != "trashed"]
+    done   = [p for p in prospects if p.get("site_status") == "done"]
+    failed = [p for p in prospects if p.get("status") == "failed"]
+    running = [p for p in prospects if p.get("status") == "running"]
+
+    total_cost = 0.0
+    total_duration = 0.0
+    n_timed = 0
+    for p in done:
+        cp = p.get("collected_path")
+        if cp:
+            costs = get_prospect_costs(p)
+            total_cost += sum(c["cost"] for c in costs)
+            t = _read_meta(Path(cp) / "timings.json")
+            if t and t.get("total_duration_s"):
+                total_duration += t["total_duration_s"]
+                n_timed += 1
+
+    return jsonify({
+        "total":          len(prospects),
+        "done":           len(done),
+        "failed":         len(failed),
+        "running":        len(running),
+        "pending":        len(prospects) - len(done) - len(failed) - len(running),
+        "total_cost_eur": round(total_cost * 0.92, 2),
+        "avg_cost_eur":   round((total_cost / len(done)) * 0.92, 3) if done else 0,
+        "avg_duration_s": round(total_duration / n_timed) if n_timed else 0,
+    })
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
