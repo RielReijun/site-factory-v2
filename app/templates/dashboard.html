@@ -277,9 +277,9 @@
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
       Genereer volledige site
     </button>
-    <button class="sf-btn sf-btn-ghost" onclick="copyMail()">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      Kopieer mail
+    <button class="sf-btn sf-btn-ghost" onclick="openGmail()" id="dp-gmail-btn" style="background:rgba(234,67,53,.12);color:#ea4335">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M20 4H4C2.9 4 2 4.9 2 6v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="#ea4335"/></svg>
+      Openen in Gmail
     </button>
     <button class="sf-btn sf-btn-danger" onclick="trashProspect()">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -647,6 +647,26 @@ async function trashProspect() {
   await fetch('/api/prospects/'+currentSlug+'/trash', {method:'POST'});
   closeDetail();
   await loadProspects();
+}
+
+function openGmail() {
+  const raw = document.getElementById('dp-mail').textContent.trim();
+  if (!raw) return;
+
+  // Onderwerp extraheren
+  let subject = '', body = raw;
+  const subjectMatch = raw.match(/^Onderwerp:\s*(.+?)(?:\n|$)/im);
+  if (subjectMatch) {
+    subject = subjectMatch[1].trim();
+    // Body = alles na de eerste lege regel na het onderwerp
+    const afterSubject = raw.slice(raw.indexOf(subjectMatch[0]) + subjectMatch[0].length);
+    body = afterSubject.replace(/^[\s\-]+/, '').trim();
+  }
+
+  const url = 'https://mail.google.com/mail/?view=cm&fs=1'
+    + '&su=' + encodeURIComponent(subject)
+    + '&body=' + encodeURIComponent(body);
+  window.open(url, '_blank');
 }
 
 async function generateFullSite() {

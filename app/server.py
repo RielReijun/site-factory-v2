@@ -1153,6 +1153,28 @@ def api_deploy(slug):
                     cloudflare_url=cloudflare_url,
                 )
                 llog(f"[OK]  Deploy klaar voor {cn}")
+
+                # Mail-URL updaten met echte Cloudflare URL
+                if cloudflare_url:
+                    for p2 in load_prospects():
+                        if p2.get("name") == cn:
+                            mail_path = p2.get("mail_path", "")
+                            if not mail_path:
+                                cp2 = p2.get("collected_path", "")
+                                if cp2:
+                                    mail_path = str(Path(cp2) / "outreach_mail.txt")
+                            if mail_path and Path(mail_path).exists():
+                                try:
+                                    mail = Path(mail_path).read_text(encoding="utf-8")
+                                    old_slug = slugify(cn)
+                                    old_url = f"https://site-{old_slug}.pages.dev"
+                                    if old_url in mail:
+                                        mail = mail.replace(old_url, cloudflare_url)
+                                        Path(mail_path).write_text(mail, encoding="utf-8")
+                                        llog(f"[OK]  Mail URL bijgewerkt naar {cloudflare_url}")
+                                except Exception as e:
+                                    llog(f"[WARN] Mail URL update mislukt: {e}")
+                            break
             else:
                 update_prospect(cn, deploy_status="failed")
                 llog(f"[FAIL] Deploy mislukt voor {cn}")
