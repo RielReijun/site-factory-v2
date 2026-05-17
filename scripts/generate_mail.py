@@ -57,19 +57,21 @@ def main():
     prompt = f"""Je schrijft een korte, persoonlijke cold-outreach e-mail namens {agency_name or 'een webdesigner'}.
 
 Situatie:
-- Jij hebt pro-actief een nieuwe website gemaakt voor {company} als demo
+- Jij hebt pro-actief een NIEUWE HOMEPAGE gebouwd voor {company} als demo
 - De demo staat live op: {demo_url}
-- Je stuurt deze mail naar het bedrijf om te vragen of ze interesse hebben
-- Eenmalige kosten: €300 voor de complete website
-- Hosting: €10 per maand (inclusief onderhoud en live zetten)
-- Jij regelt alles: het overzetten, live zetten en de hosting. Zij hoeven niks te doen.
+- Wat je hebt gebouwd: alleen de homepage, volledig opnieuw ontworpen op basis van hun huidige site
+- Wat nog NIET is gebouwd: de rest van de pagina's (over ons, diensten, contact, etc.)
+- Prijs: €499 voor de complete website (homepage + alle overige pagina's afmaken + overdracht van alle bestanden)
+- Hosting en onderhoud bespreek je in een vervolgcontact, noem dit NIET in de mail
+- Jij regelt alles: het overzetten en live zetten. Zij hoeven niks te doen.
 
 Toon:
 - Kort, direct en menselijk, geen marketingtaal
 - Geen bulleted lijstjes, geen headers, gewone alinea's
 - Maximaal 3 korte alinea's
-- Noem de prijs gewoon en zelfverzekerd, niet verontschuldigend
-- Sluit af met iets in de trant van: "Het is nog niet perfect, maar de nieuwe basis is gezet. Ik hoop dat we samen verder kunnen bouwen." Pas de exacte bewoording aan zodat het past bij de toon van de mail, maar de boodschap (bescheiden, samenwerkingsgericht, ruimte voor verbetering) moet erin zitten.
+- Wees eerlijk en transparant: benoem duidelijk dat je de homepage hebt gebouwd als showcase, en dat de volledige prijs van €499 ook het afmaken van de rest inhoudt
+- Noem de prijs zelfverzekerd, zonder je te verontschuldigen
+- Geen zwakke slotformule zoals "het is nog niet af". Sluit positief af: dit is al het bewijs dat je weet wat je doet, en voor €499 lever je het compleet af
 - Daarna alleen de naam van de afzender, geen verdere afsluiting
 
 Bedrijfscontext uit de briefing:
